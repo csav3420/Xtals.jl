@@ -121,6 +121,7 @@ export
     make_slabs,
     surface_basis,
     get_terminations,
+    are_terminations_equivalent,
     detect_molecules,
     get_bond_vector,
     calculate_bond_vectors!,

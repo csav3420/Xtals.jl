@@ -235,15 +235,16 @@ function Crystal(
                     symmetry_info = true
 
                     symmetry_count = 0
-                    # CSD stores symmetry as one column in a string that ends
-                    #   up getting split on the spaces between commas (i.e. its
-                    #   not really one column) the length(name_to_column) + 2
-                    #   should catch this hopefully there aren't other weird
-                    #   ways of writing cifs...
-                    while i <= length(lines) &&
-                              length(lines[i]) > 0 &&
-                              lines[i][1] != '_' &&
-                              !occursin("loop_", lines[i])
+                    while i <= length(lines)
+                        # skip blank lines or comments
+                        sline = strip(lines[i])
+                        if isempty(sline) || startswith(sline, "#")
+                            i += 1
+                            continue
+                        end
+                        if sline[1] == '_' || startswith(sline, "loop_") || startswith(sline, "data_")
+                            break
+                        end
                         line = lines[i]
                         sym_funcs = split(line, [' ', ',', ''', '"', '\t']; keepempty=false)
                         if length(sym_funcs) == 0
@@ -274,12 +275,24 @@ function Crystal(
                     # =====================
                 elseif fractional && !atom_info
                     atom_info = true
+                    max_col = maximum(values(name_to_column))
 
-                    while i <= length(lines) &&
-                        length(split(lines[i])) == length(name_to_column)
-                        line = split(lines[i])
+                    while i <= length(lines)
+                        sline = strip(lines[i])
+                        if isempty(sline) || startswith(sline, "#")
+                            i += 1
+                            continue
+                        end
+                        if sline[1] == '_' || startswith(sline, "loop_") || startswith(sline, "data_")
+                            break
+                        end
+                        line = split(sline)
+                        if length(line) < max_col
+                            break
+                        end
 
-                        push!(species, Symbol(line[name_to_column[species_column]]))
+                        raw_species = strip(line[name_to_column[species_column]], ['\'', '"'])
+                        push!(species, Symbol(raw_species))
                         coords = [coords [
                             mod(
                                 parse(
@@ -331,12 +344,24 @@ function Crystal(
                     # =====================
                 elseif cartesian && !atom_info
                     atom_info = true
+                    max_col = maximum(values(name_to_column))
 
-                    while i <= length(lines) &&
-                        length(split(lines[i])) == length(name_to_column)
-                        line = split(lines[i])
+                    while i <= length(lines)
+                        sline = strip(lines[i])
+                        if isempty(sline) || startswith(sline, "#")
+                            i += 1
+                            continue
+                        end
+                        if sline[1] == '_' || startswith(sline, "loop_") || startswith(sline, "data_")
+                            break
+                        end
+                        line = split(sline)
+                        if length(line) < max_col
+                            break
+                        end
 
-                        push!(species, Symbol(line[name_to_column[species_column]]))
+                        raw_species = strip(line[name_to_column[species_column]], ['\'', '"'])
+                        push!(species, Symbol(raw_species))
                         coords = [coords [
                             parse(
                                 Float64,
@@ -380,9 +405,21 @@ function Crystal(
                 elseif read_bonds_from_file &&
                        haskey(name_to_column, "_geom_bond_atom_site_label_1") &&
                        haskey(name_to_column, "_geom_bond_atom_site_label_2")
-                    while i <= length(lines) &&
-                        length(split(lines[i])) == length(name_to_column)
-                        line = split(lines[i])
+                    max_col = maximum(values(name_to_column))
+                    while i <= length(lines)
+                        sline = strip(lines[i])
+                        if isempty(sline) || startswith(sline, "#")
+                            i += 1
+                            continue
+                        end
+                        if sline[1] == '_' || startswith(sline, "loop_") || startswith(sline, "data_")
+                            break
+                        end
+                        line = split(sline)
+                        if length(line) < max_col
+                            break
+                        end
+
                         atom_one_idx =
                             label_num_to_idx[line[name_to_column["_geom_bond_atom_site_label_1"]]]
                         atom_two_idx =
@@ -420,8 +457,8 @@ function Crystal(
             i += 1
         end # End loop over lines
 
-        if !atom_info
-            error("Could not find _atom_site* after loop_ in .cif file\n")
+        if length(species) == 0
+            error("Could not parse any atomic coordinates from CIF file: $(filename)\n")
         end
 
         # Structure must either be in P1 symmetry or have replication information

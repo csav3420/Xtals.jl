@@ -104,6 +104,34 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test ne(slab.bonds) > 0
     end
 
+    @testset "Aspirin Slabs & Multi-Termination Verification" begin
+        aspirin = Crystal("aspirin.cif")
+        infer_bonds!(aspirin, true)
+        @test aspirin.atoms.n == 84
+
+        # Verify multi-termination slab generation across multiple Miller indices
+        for hkl in [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (1, 1, 1), (1, 2, 3)]
+            terms = get_terminations(aspirin, hkl)
+            @test !isempty(terms)
+            for (t_idx, term) in enumerate(terms)
+                slabs = make_slab(aspirin, hkl; termination=t_idx, vacuum=10.0, layers=1)
+                @test slabs[1].atoms.n == 84
+                @test ne(slabs[1].bonds) == 84
+            end
+        end
+
+        # Termination equivalence check
+        terms_100 = get_terminations(aspirin, (1, 0, 0))
+        if length(terms_100) >= 2
+            @test !are_terminations_equivalent(aspirin, (1, 0, 0), terms_100[1], terms_100[2])
+            @test are_terminations_equivalent(aspirin, (1, 0, 0), terms_100[1], terms_100[1])
+        end
+
+        # Test unique_only parameter in get_terminations
+        u_terms = get_terminations(aspirin, (1, 0, 0); unique_only=true)
+        @test length(u_terms) <= length(terms_100)
+    end
+
     @testset "Error Handling & Input Validation" begin
         xtal = Crystal("SBMOF-1.cif")
 

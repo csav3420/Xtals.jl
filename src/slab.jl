@@ -159,11 +159,75 @@ function detect_molecules(crystal::Crystal)
 end
 
 """
-    get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=0.5) -> Vector{Float64}
+    are_terminations_equivalent(crystal::Crystal, hkl::Tuple{Int, Int, Int},
+                                z1::Float64, z2::Float64; tol::Float64=0.2) -> Bool
+
+Determine if two surface cut shifts z1 and z2 produce structurally identical
+or mirror/inversion-symmetric surface terminations.
+"""
+function are_terminations_equivalent(
+    crystal::Crystal,
+    hkl::Tuple{Int, Int, Int},
+    z1::Float64,
+    z2::Float64;
+    tol::Float64=0.2
+)
+    geom = precompute_slab_geometry(crystal, hkl)
+    h_layer = geom.u3_rot[3]
+
+    # Compute relative height profile and species signature for cut z1 and z2
+    profiles1 = Tuple{Float64, Symbol}[]
+    profiles2 = Tuple{Float64, Symbol}[]
+
+    for mol in geom.molecules
+        c_rot = geom.R * mol.centroid_cart
+        sp_sig = Symbol(join(sort(string.(mol.species))))
+
+        zh1 = mod(c_rot[3] - z1, h_layer)
+        zh2 = mod(c_rot[3] - z2, h_layer)
+
+        push!(profiles1, (zh1, sp_sig))
+        push!(profiles2, (zh2, sp_sig))
+    end
+
+    sort!(profiles1, by=x -> (x[1], x[2]))
+    sort!(profiles2, by=x -> (x[1], x[2]))
+
+    # Check direct match
+    direct_match = true
+    for i in 1:length(profiles1)
+        if profiles1[i][2] != profiles2[i][2] || abs(profiles1[i][1] - profiles2[i][1]) > tol
+            direct_match = false
+            break
+        end
+    end
+    if direct_match
+        return true
+    end
+
+    # Check inverted / mirror match (z -> h_layer - z)
+    profiles2_inv = [(mod(h_layer - p[1], h_layer), p[2]) for p in profiles2]
+    sort!(profiles2_inv, by=x -> (x[1], x[2]))
+
+    inv_match = true
+    for i in 1:length(profiles1)
+        if profiles1[i][2] != profiles2_inv[i][2] || abs(profiles1[i][1] - profiles2_inv[i][1]) > tol
+            inv_match = false
+            break
+        end
+    end
+
+    return inv_match
+end
+
+"""
+    get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int};
+                     tol::Float64=0.5, unique_only::Bool=false) -> Vector{Float64}
 
 Identify distinct molecular surface termination plane heights along the (h,k,l) surface normal.
+If `unique_only=true`, filter out structurally and mirror-equivalent terminations.
 """
-function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=0.5)
+function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=0.5, unique_only::Bool=false)
     M = surface_basis(hkl)
     f_to_c_orig = crystal.box.f_to_c
     u1 = f_to_c_orig * M[:, 1]
@@ -200,7 +264,26 @@ function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Floa
         push!(clustered, sum(current_cluster) / length(current_cluster))
     end
 
-    return clustered
+    if !unique_only || length(clustered) <= 1
+        return clustered
+    end
+
+    # Filter structurally equivalent / mirrored terminations
+    unique_terms = Float64[clustered[1]]
+    for i in 2:length(clustered)
+        is_equiv = false
+        for u_term in unique_terms
+            if are_terminations_equivalent(crystal, hkl, clustered[i], u_term; tol=tol)
+                is_equiv = true
+                break
+            end
+        end
+        if !is_equiv
+            push!(unique_terms, clustered[i])
+        end
+    end
+
+    return unique_terms
 end
 
 """

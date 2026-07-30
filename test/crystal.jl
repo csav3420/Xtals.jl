@@ -213,6 +213,10 @@ end
     # test that a file with no atoms throws error
     @test_throws ErrorException Crystal("no_atoms.cif")
 
+    # test CIF files with blank lines between header tags and data (aspirin.cif)
+    aspirin = Crystal("aspirin.cif")
+    @test aspirin.atoms.n == 84
+
     abs_path_xtal =
         Crystal(joinpath(rc[:paths][:crystals], "SBMOF-1.cif"); absolute_path=true)
     @test sbmof1 ≈ abs_path_xtal
