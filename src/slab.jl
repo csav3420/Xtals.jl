@@ -193,31 +193,13 @@ function are_terminations_equivalent(
     sort!(profiles1, by=x -> (x[1], x[2]))
     sort!(profiles2, by=x -> (x[1], x[2]))
 
-    # Check direct match
-    direct_match = true
+    # Check direct 3D translational match
     for i in 1:length(profiles1)
         if profiles1[i][2] != profiles2[i][2] || abs(profiles1[i][1] - profiles2[i][1]) > tol
-            direct_match = false
-            break
+            return false
         end
     end
-    if direct_match
-        return true
-    end
-
-    # Check inverted / mirror match (z -> h_layer - z)
-    profiles2_inv = [(mod(h_layer - p[1], h_layer), p[2]) for p in profiles2]
-    sort!(profiles2_inv, by=x -> (x[1], x[2]))
-
-    inv_match = true
-    for i in 1:length(profiles1)
-        if profiles1[i][2] != profiles2_inv[i][2] || abs(profiles1[i][1] - profiles2_inv[i][1]) > tol
-            inv_match = false
-            break
-        end
-    end
-
-    return inv_match
+    return true
 end
 
 """

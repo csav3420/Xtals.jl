@@ -130,9 +130,12 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
             @test are_terminations_equivalent(aspirin, (1, 0, 0), terms_100[1], terms_100[1])
         end
 
-        # Test unique_only parameter in get_terminations
-        u_terms = get_terminations(aspirin, (1, 0, 0); unique_only=true)
-        @test length(u_terms) <= length(terms_100)
+        # Test unique_only parameter in get_terminations (Strict 2-termination assertions for Aspirin 001 and 010)
+        u_terms_001 = get_terminations(aspirin, (0, 0, 1); unique_only=true)
+        @test length(u_terms_001) == 2
+
+        u_terms_010 = get_terminations(aspirin, (0, 1, 0); unique_only=true)
+        @test length(u_terms_010) == 2
     end
 
     @testset "Error Handling & Input Validation" begin
