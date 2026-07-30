@@ -3,9 +3,9 @@ using Graphs
 using StaticArrays
 
 """
-    MoleculeData(atom_indices, species, relative_coords_cart, charges, centroid_cart)
+    MoleculeData(atom_indices, species, relative_coords_cart, charges, centroid_cart, edges)
 
-Data container holding pre-computed information for an individual molecule.
+Data container holding pre-computed information and bonding edges for an individual molecule.
 """
 struct MoleculeData
     atom_indices::Vector{Int}
@@ -13,6 +13,7 @@ struct MoleculeData
     relative_coords_cart::Matrix{Float64} # 3 x N matrix of Cartesian coords relative to centroid
     charges::Vector{Float64}
     centroid_cart::Vector{Float64}        # 3D Cartesian centroid position
+    edges::Vector{Tuple{Int, Int}}        # Local atom index pairs (1..n_m, 1..n_m)
 end
 
 """
@@ -24,7 +25,7 @@ where m1 and m2 lie in the (h, k, l) plane, m3 is out-of-plane, and det(M) > 0.
 function surface_basis(hkl::Tuple{Int, Int, Int})
     h, k, l = hkl
     if h == 0 && k == 0 && l == 0
-        error("Miller indices cannot be (0, 0, 0)")
+        throw(ArgumentError("Miller indices cannot be (0, 0, 0)"))
     end
 
     g_hkl = gcd(gcd(h, k), l)
@@ -86,7 +87,7 @@ end
     detect_molecules(crystal::Crystal) -> Vector{MoleculeData}
 
 Extract connected components of crystal.bonds (running infer_bonds! if unassigned),
-un-wrap periodic boundary crossings for each molecule, and return MoleculeData objects.
+un-wrap periodic boundary crossings via BFS, and extract intra-molecular bonding edges for each molecule.
 """
 function detect_molecules(crystal::Crystal)
     c = deepcopy(crystal)
@@ -107,24 +108,51 @@ function detect_molecules(crystal::Crystal)
         m_species = c.atoms.species[comp]
         m_charges = has_charges(c) ? c.charges.q[comp] : zeros(Float64, n_m)
 
-        # Un-wrap coordinates relative to first atom of molecule
+        # Local atom index map
+        local_map = Dict{Int, Int}(comp[i] => i for i in 1:n_m)
+
+        # BFS un-wrap relative to first atom
         unwrapped_cart = zeros(Float64, 3, n_m)
+        visited = fill(false, n_m)
+
+        queue = [comp[1]]
+        visited[1] = true
         unwrapped_cart[:, 1] = coords_cart[:, comp[1]]
 
-        for j in 2:n_m
-            idx = comp[j]
-            prev_idx = comp[j-1]
-            diff_cart = coords_cart[:, idx] - unwrapped_cart[:, j-1]
-            diff_frac = c_to_f * diff_cart
-            diff_frac .-= round.(diff_frac) # nearest image
-            unwrapped_cart[:, j] = unwrapped_cart[:, j-1] + f_to_c * diff_frac
+        while !isempty(queue)
+            curr = popfirst!(queue)
+            curr_local = local_map[curr]
+            for nbr in neighbors(c.bonds, curr)
+                if nbr in keys(local_map)
+                    nbr_local = local_map[nbr]
+                    if !visited[nbr_local]
+                        visited[nbr_local] = true
+                        diff_cart = coords_cart[:, nbr] - coords_cart[:, curr]
+                        diff_frac = c_to_f * diff_cart
+                        diff_frac .-= round.(diff_frac) # nearest image
+                        unwrapped_cart[:, nbr_local] = unwrapped_cart[:, curr_local] + f_to_c * diff_frac
+                        push!(queue, nbr)
+                    end
+                end
+            end
         end
 
         # Calculate Cartesian centroid
         centroid = vec(sum(unwrapped_cart, dims=2) ./ n_m)
         relative_cart = unwrapped_cart .- centroid
 
-        push!(molecules, MoleculeData(comp, m_species, relative_cart, m_charges, centroid))
+        # Extract intra-molecular edges from c.bonds
+        edges = Tuple{Int, Int}[]
+        comp_set = Set(comp)
+        for u in comp
+            for v in neighbors(c.bonds, u)
+                if v in comp_set && u < v
+                    push!(edges, (local_map[u], local_map[v]))
+                end
+            end
+        end
+
+        push!(molecules, MoleculeData(comp, m_species, relative_cart, m_charges, centroid, edges))
     end
 
     return molecules
@@ -198,11 +226,9 @@ function precompute_slab_geometry(crystal::Crystal, hkl::Tuple{Int, Int, Int})
 end
 
 """
-    construct_single_slab(crystal::Crystal, hkl::Tuple{Int, Int, Int}, geom, k_layer::Int;
-                          Nx::Int, Ny::Int, vacuum::Float64, termination::Int, shift::Float64,
-                          tol::Float64, orthogonalize_z::Bool, orthogonalize::Bool, keep_molecules_whole::Bool) -> Crystal
+    construct_single_slab(...) -> Crystal
 
-Internal helper constructing an individual centered slab for k_layer.
+Internal helper constructing an individual centered slab for k_layer with preserved molecular bonds.
 """
 function construct_single_slab(
     crystal::Crystal,
@@ -255,23 +281,32 @@ function construct_single_slab(
     slab_species = Symbol[]
     slab_coords_cart = Vector{Float64}[]
     slab_charges = Float64[]
+    slab_edges = Tuple{Int, Int}[]
 
     if keep_molecules_whole && !isempty(geom.molecules)
-        for rx in 0:(Nx - 1), ry in 0:(Ny - 1), rz in -1:(Nz + 1)
-            grid_shift = rx * geom.u1_rot + ry * geom.u2_rot + rz * geom.u3_rot
-            for mol in geom.molecules
-                c_cart = geom.R * mol.centroid_cart + grid_shift
-                c_z_rel = c_cart[3] - total_shift
+        for mol in geom.molecules
+            c_rot = geom.R * mol.centroid_cart
+            z_rel = c_rot[3] - total_shift
+            shift_z = floor(z_rel / h_layer)
+            z_mod = z_rel - shift_z * h_layer
+            c_base = [c_rot[1], c_rot[2], c_rot[3] - shift_z * h_layer]
 
-                if 0.0 <= c_z_rel < slab_height_max
-                    # Shift z by +vacuum to place vacuum at bottom and top
-                    c_cart_centered = [c_cart[1], c_cart[2], c_cart[3] - total_shift + vacuum]
-                    for i in 1:length(mol.species)
-                        push!(slab_species, mol.species[i])
-                        push!(slab_charges, mol.charges[i])
-                        r_atom = c_cart_centered + geom.R * mol.relative_coords_cart[:, i]
-                        push!(slab_coords_cart, r_atom)
-                    end
+            for rx in 0:(Nx - 1), ry in 0:(Ny - 1), kz in 0:(Nz - 1)
+                c_cell = c_base + rx * geom.u1_rot + ry * geom.u2_rot + kz * geom.u3_rot
+                c_centered = [c_cell[1], c_cell[2], z_mod + kz * h_layer + vacuum]
+
+                offset = length(slab_species)
+
+                for i in 1:length(mol.species)
+                    push!(slab_species, mol.species[i])
+                    push!(slab_charges, mol.charges[i])
+                    r_atom = c_centered + geom.R * mol.relative_coords_cart[:, i]
+                    push!(slab_coords_cart, r_atom)
+                end
+
+                # Preserve molecular bond edges in slab
+                for (lu, lv) in mol.edges
+                    push!(slab_edges, (offset + lu, offset + lv))
                 end
             end
         end
@@ -306,7 +341,18 @@ function construct_single_slab(
     )
 
     slab_name = "$(crystal.name)_slab_$(hkl[1])$(hkl[2])$(hkl[3])_L$(k_layer)"
-    return Crystal(slab_name, slab_box, atoms_slab, charges_slab)
+    slab_crystal = Crystal(slab_name, slab_box, atoms_slab, charges_slab)
+
+    # Populate bonds graph
+    if keep_molecules_whole && !isempty(geom.molecules)
+        for (u, v) in slab_edges
+            add_edge!(slab_crystal.bonds, u, v)
+        end
+    elseif slab_crystal.atoms.n > 0
+        infer_bonds!(slab_crystal, true)
+    end
+
+    return slab_crystal
 end
 
 """
@@ -343,6 +389,23 @@ function make_slab(
     orthogonalize::Bool=false,
     keep_molecules_whole::Bool=true
 )
+    # Guard clauses and input validation
+    if vacuum < 0.0
+        throw(ArgumentError("vacuum padding must be non-negative, got $vacuum"))
+    end
+    if max_height !== nothing && max_height <= 0.0
+        throw(ArgumentError("max_height must be positive, got $max_height"))
+    end
+    if min_thickness !== nothing && min_thickness <= 0.0
+        throw(ArgumentError("min_thickness must be positive, got $min_thickness"))
+    end
+    if min_size !== nothing && (min_size[1] <= 0.0 || min_size[2] <= 0.0)
+        throw(ArgumentError("min_size dimensions must be positive, got $min_size"))
+    end
+    if layers isa Int && layers < 1
+        throw(ArgumentError("layers must be >= 1, got $layers"))
+    end
+
     geom = precompute_slab_geometry(crystal, hkl)
 
     # Determine lateral surface replication Nx, Ny

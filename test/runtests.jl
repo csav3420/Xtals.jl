@@ -7,6 +7,7 @@ testfiles = [
     "box.jl"
     "assert_p1_symmetry.jl"
     "paths.jl"
+    "slab.jl"
 ]
 
 @assert (VERSION.major == 1) && (VERSION.minor ≥ 6) "Minimum Julia version not met."
