@@ -287,6 +287,34 @@ function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Floa
 end
 
 """
+    check_slab_distances(slab::Crystal; min_dist::Float64=0.7) -> Float64
+
+Calculate the minimum non-bonded atom-atom distance in the slab.
+Throws a warning if any non-bonded atom pair is closer than `min_dist`.
+"""
+function check_slab_distances(slab::Crystal; min_dist::Float64=0.7)
+    coords = Cart(slab.atoms.coords, slab.box).x
+    n = slab.atoms.n
+    min_d = 1e9
+
+    for i in 1:n, j in (i+1):n
+        if has_edge(slab.bonds, i, j)
+            continue
+        end
+        d = norm(coords[:, i] - coords[:, j])
+        if d < min_d
+            min_d = d
+        end
+    end
+
+    if min_d < min_dist
+        @warn "Slab contains non-bonded atoms at distance $(round(min_d, digits=3)) Å < min_dist ($min_dist Å)"
+    end
+
+    return min_d
+end
+
+"""
     precompute_slab_geometry(crystal::Crystal, hkl::Tuple{Int, Int, Int})
 
 Internal helper to pre-calculate transformation matrices, rotated cell vectors, and molecular data.
@@ -371,8 +399,10 @@ function construct_single_slab(
             c_rot = geom.R * mol.centroid_cart
             z_rel = c_rot[3] - total_shift
             shift_z = floor(z_rel / h_layer)
-            z_mod = z_rel - shift_z * h_layer
-            c_base = [c_rot[1], c_rot[2], c_rot[3] - shift_z * h_layer]
+
+            # Apply full 3D Cartesian lattice shift -shift_z * u3_rot
+            c_base = c_rot - shift_z * geom.u3_rot
+            z_mod = c_base[3] - total_shift
 
             for rx in 0:(Nx - 1), ry in 0:(Ny - 1), kz in 0:(Nz - 1)
                 c_cell = c_base + rx * geom.u1_rot + ry * geom.u2_rot + kz * geom.u3_rot
@@ -396,18 +426,22 @@ function construct_single_slab(
     else
         coords_cart_orig = Cart(crystal.atoms.coords, crystal.box).x
         for rx in 0:(Nx - 1), ry in 0:(Ny - 1), rz in 0:(Nz - 1)
-            grid_shift = rx * geom.u1_rot + ry * geom.u2_rot + rz * geom.u3_rot
+            grid_shift = rx * geom.u1_rot + ry * geom.u2_rot
             for i in 1:crystal.atoms.n
-                r_rot = geom.R * coords_cart_orig[:, i] + grid_shift
-                r_z_rel = r_rot[3] - total_shift
-                if 0.0 <= r_z_rel < slab_height_max
-                    r_rot_centered = [r_rot[1], r_rot[2], r_rot[3] - total_shift + vacuum]
-                    push!(slab_species, crystal.atoms.species[i])
-                    if has_charges(crystal)
-                        push!(slab_charges, crystal.charges.q[i])
-                    end
-                    push!(slab_coords_cart, r_rot_centered)
+                r_rot = geom.R * coords_cart_orig[:, i]
+                z_rel = r_rot[3] - total_shift
+                shift_z = floor(z_rel / h_layer)
+                r_base = r_rot - shift_z * geom.u3_rot + grid_shift
+                z_mod = r_base[3] - total_shift
+
+                r_rot_centered = [r_base[1] + rz * geom.u3_rot[1],
+                                  r_base[2] + rz * geom.u3_rot[2],
+                                  z_mod + rz * h_layer + vacuum]
+                push!(slab_species, crystal.atoms.species[i])
+                if has_charges(crystal)
+                    push!(slab_charges, crystal.charges.q[i])
                 end
+                push!(slab_coords_cart, r_rot_centered)
             end
         end
     end

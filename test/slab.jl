@@ -117,6 +117,9 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
                 slabs = make_slab(aspirin, hkl; termination=t_idx, vacuum=10.0, layers=1)
                 @test slabs[1].atoms.n == 84
                 @test ne(slabs[1].bonds) == 84
+                # Verify physical inter-atomic distances (no overlapping atoms)
+                min_d = check_slab_distances(slabs[1])
+                @test min_d >= 1.4
             end
         end
 

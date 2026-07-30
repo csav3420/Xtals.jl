@@ -122,6 +122,7 @@ export
     surface_basis,
     get_terminations,
     are_terminations_equivalent,
+    check_slab_distances,
     detect_molecules,
     get_bond_vector,
     calculate_bond_vectors!,
