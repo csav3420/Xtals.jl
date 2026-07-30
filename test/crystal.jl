@@ -224,7 +224,7 @@ end
     @test length(pos) == 120
     @test isapprox(pos[1][2].val, 1.43954862, atol=1e-9)
     @test ismissing(velocity(xtal))
-    @test bounding_box(xtal)[1][1].val == xtal.box.a
+    @test cell_vectors(xtal)[1][1].val == xtal.box.a
     @test periodicity(xtal) == [1, 1, 1]
     @test n_dimensions(xtal) == 3
 end
@@ -238,7 +238,7 @@ end
     @test !neutral(assign_charges(xtal, Dict(:Ca => 2.0, :O => 2.0), 100.0)) # not charge neutral
     @test_throws ErrorException assign_charges(xtal, Dict(:Ca => 2.0, :O => 2.0)) # not charge neutral
     @test empirical_formula(xtal) == Dict(:Ca => 1, :O => 1)
-    @test molecular_weight(xtal) ≈ 15.9994 + 40.078
+    @test molecular_weight(xtal) ≈ rc[:atomic_masses][:O] + rc[:atomic_masses][:Ca]
     xtal3 = assign_charges(xtal2, Dict(:Ca => -2.0, :O => 2.0))
     @test isapprox(xtal2.charges, xtal3.charges)
 end

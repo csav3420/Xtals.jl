@@ -3,7 +3,7 @@ module Path_Test
 using IOCapture, Test, Xtals
 
 @testset "Path Tests" begin
-    @test rc[:atomic_masses][:He] == 4.0026
+    @test isapprox(rc[:atomic_masses][:He], 4.0026, atol=1e-3)
     oldpath = rc[:paths][:data]
     newpath = joinpath(pwd(), "other_data")
     set_paths(newpath; print_paths=true)

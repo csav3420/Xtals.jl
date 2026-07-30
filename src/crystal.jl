@@ -1,6 +1,6 @@
 # AtomsBase interface things
 import Base: position, length, getindex, keys, display, show, print, println
-import AtomsBase: velocity, bounding_box, boundary_conditions, atomic_symbol, species_type, atomic_number
+import AtomsBase: velocity, cell_vectors, atomic_symbol, atomic_number, periodicity, species, chemical_formula
 
 """
     SymmetryInfo(symmetry, space_group, is_p1)
@@ -1361,7 +1361,9 @@ keys(xtal::Crystal) = 1:xtal.atoms.n
 
 atomic_number(xtal::Crystal) = [elements[x].number for x in xtal.atoms.species]
 
-species_type(xtal::Crystal) = xtal.atoms.species
+species(xtal::Crystal) = xtal.atoms.species
+
+species(xtal::Crystal, i::Integer) = xtal.atoms.species[i]
 
 length(xtal::Crystal) = xtal.atoms.n
 
@@ -1371,6 +1373,12 @@ atomic_symbol(atom::Atoms) = atom.species[1]
 
 atomic_symbol(xtal::Crystal) = xtal.atoms.species
 
+atomic_symbol(xtal::Crystal, i::Integer) = xtal.atoms.species[i]
+
+element_symbol(xtal::Crystal) = xtal.atoms.species
+
+element_symbol(xtal::Crystal, i::Integer) = xtal.atoms.species[i]
+
 function position(crystal::Crystal)
     pos = Cart(crystal.atoms.coords, crystal.box).x
     return [pos[:, i] for i in 1:size(pos, 2)] * u"Å"
@@ -1378,12 +1386,10 @@ end
 
 velocity(::Crystal) = missing
 
-function bounding_box(crystal::Crystal)
+function cell_vectors(crystal::Crystal)
     return SVector{3}([SVector{3}(crystal.box.f_to_c[:, i]u"Å") for i in 1:3])
 end
 
-function boundary_conditions(::Crystal)
-    return SVector{3, BoundaryCondition}([Periodic(), Periodic(), Periodic()])
-end
+periodicity(::Crystal) = [true, true, true]
 
-chemical_formula(crystal::Crystal) = AtomsBase.chemical_formula(crystal)
+chemical_formula(crystal::Crystal) = AtomsBase.chemical_formula(crystal.atoms.species)

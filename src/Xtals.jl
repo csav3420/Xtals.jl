@@ -11,6 +11,7 @@ using AtomsBase,
     Printf,
     StaticArrays,
     Unitful
+    PeriodicTable
 using PrecompileSignatures: @precompile_signatures
 
 # global variable dictionary
@@ -23,12 +24,12 @@ include("crystal.jl")
 include("distance.jl")
 include("misc.jl")
 include("repfactors.jl")
-include("atomic_masses.jl")
 include("cpk_colors.jl")
 include("covalent_radii.jl")
 include("bonds.jl")
+include("slab.jl")
 
-rc[:atomic_masses] = DEFAULT_ATOMIC_MASSES
+rc[:atomic_masses] = Dict([(Symbol(elem.symbol), ustrip(elem.atomic_mass)) for elem in elements[1:118]])
 rc[:cpk_colors] = DEFAULT_CPK_COLORS
 rc[:covalent_radii] = DEFAULT_COVALENT_RADII
 DEFAULT_BONDING_RULES = bondingrules()
@@ -95,8 +96,9 @@ export
     # AtomsBase things also from crystal
     position,
     velocity,
-    bounding_box,
-    boundary_conditions,
+    cell_vectors,
+    periodicity,
+    species,
     chemical_formula,
 
     # bonds.jl
@@ -111,6 +113,15 @@ export
     drop_cross_pb_bonds!,
     bondingrules,
     bond_angle,
+    view_bonding_rules,
+    bond_length,
+
+    # slab.jl
+    make_slab,
+    make_slabs,
+    surface_basis,
+    get_terminations,
+    detect_molecules,
     get_bond_vector,
     calculate_bond_vectors!,
     clear_vectors!,

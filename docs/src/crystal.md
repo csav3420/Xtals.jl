@@ -94,7 +94,7 @@ If the structure file does not contain partial charges, we provide methods to as
 
 ```jldoctest crystal; output=false
 species_to_charge = Dict(:Zn => 2.0, :C => 0.0, :H => 0.0, :O => -0.61538)  # This method assigns a static charge to atom species
-charged_xtal = assign_charges(xtal, species_to_charge, 1e-3)                # This function creates a new charged `Crystal` object.
+charged_xtal = assign_charges(xtal, species_to_charge, 1e-3);                # This function creates a new charged `Crystal` object.
 #   The function checks for charge neutrality with a tolerance of 1e-3
 new_charges = Charges(zeros(xtal.atoms.n), xtal.atoms.coords)
 other_charged_xtal = Crystal(
@@ -104,15 +104,12 @@ other_charged_xtal = Crystal(
     new_charges,
     xtal.bonds,
     xtal.symmetry
-)        #   The number of charges in the array has to be equal to the number of atoms
+);        #   The number of charges in the array has to be equal to the number of atoms
 #   and finally a new `Crystal` object is manually created
+nothing
 
 # output
 
-Crystal(C₁₉₂H₉₆O₁₀₄Zn₃₂, periodic = TTT):
-    bounding_box      : [  25.832        0        0;
-                         1.58175e-15   25.832        0;
-                         1.58175e-15 1.58175e-15   25.832]u"Å"
 ```
 
 ## Writing Crystal Files
