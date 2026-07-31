@@ -11,7 +11,6 @@ using AtomsBase,
     Printf,
     StaticArrays,
     Unitful
-    PeriodicTable
 using PrecompileSignatures: @precompile_signatures
 
 # global variable dictionary
@@ -43,10 +42,7 @@ function __init__()
     return set_paths(joinpath(pwd(), "data"); no_warn=true)
 end
 
-export
-    # Xtals.jl
-    rc,
-
+export rc,
     # matter.jl
     Coords,
     Frac,
@@ -57,21 +53,18 @@ export
     neutral,
     net_charge,
     translate_by!,
-
     # box.jl
     Box,
     replicate,
     unit_cube,
     write_vtk,
     inside,
-
     # distance.jl
     nearest_image!,
     distance,
     overlap,
     remove_duplicates,
     pairwise_distances,
-
     # misc.jl
     read_xyz,
     write_xyz,
@@ -80,7 +73,6 @@ export
     assert_P1_symmetry,
     set_paths,
     view_crystal,
-
     # crystal.jl
     Crystal,
     strip_numbers_from_atom_labels!,
@@ -100,7 +92,6 @@ export
     periodicity,
     species,
     chemical_formula,
-
     # bonds.jl
     infer_bonds!,
     write_bond_information,
@@ -115,7 +106,6 @@ export
     bond_angle,
     view_bonding_rules,
     bond_length,
-
     # slab.jl
     make_slab,
     make_slabs,
@@ -129,7 +119,5 @@ export
     clear_vectors!,
     bond_distance,
     infer_bonds
-
 @precompile_signatures(Xtals)
-
 end # module Xtals

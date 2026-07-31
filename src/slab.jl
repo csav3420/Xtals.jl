@@ -5,7 +5,16 @@ using StaticArrays
 """
     MoleculeData(atom_indices, species, relative_coords_cart, charges, centroid_cart, edges)
 
-Data container holding pre-computed information and bonding edges for an individual molecule.
+Data container holding pre-computed 3D Cartesian information and intra-molecular bonding edges
+for an individual molecule extracted from a crystal structure.
+
+# Fields
+- `atom_indices::Vector{Int}`: Global atom indices of the molecule in the source Crystal.
+- `species::Vector{Symbol}`: Atomic species of each atom in the molecule.
+- `relative_coords_cart::Matrix{Float64}`: 3 x N matrix of Cartesian coordinates relative to the molecular centroid.
+- `charges::Vector{Float64}`: Partial atomic charges of each atom.
+- `centroid_cart::Vector{Float64}`: 3D Cartesian position of the molecular centroid.
+- `edges::Vector{Tuple{Int, Int}}`: Local intra-molecular bond edges (pairs of 1-indexed local atom indices).
 """
 struct MoleculeData
     atom_indices::Vector{Int}
@@ -20,19 +29,38 @@ end
     surface_basis(hkl::Tuple{Int, Int, Int}) -> Matrix{Int}
 
 Compute a 3x3 integer transformation matrix M = [m1 m2 m3] for Miller indices (h, k, l)
-where m1 and m2 lie in the (h, k, l) plane, m3 is out-of-plane, and det(M) > 0.
+where m1 and m2 lie in the (h, k, l) surface plane, m3 is out-of-plane, and det(M) > 0.
+
+# Mathematical Formulation
+Given Miller indices (h, k, l), the surface plane equation in direct space is:
+    h*x + k*y + l*z = 0
+
+1. **In-plane vector m1**:
+   Constructed perpendicular to (h, k, l). If h, k != 0:
+       m1 = [-k / gcd(h,k), h / gcd(h,k), 0]^T
+2. **In-plane vector m2**:
+   Constructed perpendicular to both (h, k, l) and m1 via cross product:
+       m2_raw = (h, k, l) x m1
+       m2 = m2_raw / gcd(m2_raw)
+3. **Out-of-plane vector m3**:
+   Calculated using Bezout's identity via the Extended Euclidean Algorithm (`gcdx`)
+   to guarantee an integer matrix with unimodular determinant |det(M)| = 1.
+4. **Determinant Orientation**:
+   If det(M) < 0, m1 is inverted to enforce a right-handed system (det(M) > 0).
 """
 function surface_basis(hkl::Tuple{Int, Int, Int})
     h, k, l = hkl
+    # Step 1: Guard against invalid (0, 0, 0) Miller indices
     if h == 0 && k == 0 && l == 0
         throw(ArgumentError("Miller indices cannot be (0, 0, 0)"))
     end
 
+    # Step 2: Reduce Miller indices by their greatest common divisor
     g_hkl = gcd(gcd(h, k), l)
     h_c, k_c, l_c = div(h, g_hkl), div(k, g_hkl), div(l, g_hkl)
     v_hkl = [h_c, k_c, l_c]
 
-    # In-plane vector m1
+    # Step 3: Construct first in-plane lattice vector m1 perpendicular to (h, k, l)
     g_hk = gcd(h_c, k_c)
     if g_hk == 0
         m1 = [1, 0, 0]
@@ -40,12 +68,12 @@ function surface_basis(hkl::Tuple{Int, Int, Int})
         m1 = [div(-k_c, g_hk), div(h_c, g_hk), 0]
     end
 
-    # In-plane vector m2 perpendicular to v_hkl and m1
+    # Step 4: Construct second in-plane vector m2 perpendicular to v_hkl and m1 via cross product
     m2_raw = cross(v_hkl, m1)
     g_m2 = gcd(gcd(m2_raw[1], m2_raw[2]), m2_raw[3])
     m2 = div.(m2_raw, g_m2)
 
-    # Out-of-plane vector m3 via Bezout
+    # Step 5: Construct out-of-plane vector m3 via Bezout's identity (gcdx) to guarantee det(M) = 1
     if g_hk == 0
         m3 = [0, 0, sign(l_c)]
     else
@@ -54,6 +82,7 @@ function surface_basis(hkl::Tuple{Int, Int, Int})
         m3 = [s_hk * s_h, s_hk * t_k, t_l]
     end
 
+    # Step 6: Enforce positive determinant det(M) > 0 for a right-handed cell coordinate system
     det_M = round(Int, det([m1 m2 m3]))
     if det_M < 0
         m1 = -m1
@@ -69,13 +98,26 @@ end
 
 Calculate an orthogonal 3x3 rotation matrix R in SO(3) that rotates the surface normal
 u1 x u2 to align with (0, 0, 1) and places u1 in the Cartesian x-y plane.
+
+# Mathematical Formulation
+Let Q = [x_surf y_surf z_surf] be the orthonormal surface frame basis:
+- x_surf = u1 / ||u1|| (unit vector along u1 in x-y plane)
+- z_surf = (u1 x u2) / ||u1 x u2|| (unit surface normal)
+- y_surf = z_surf x x_surf (completing right-handed basis)
+
+The rotation matrix mapping crystal Cartesian coordinates to surface-aligned coordinates is:
+    R = Q^T in SO(3)
 """
 function rotation_matrix_to_z(u1::Vector{Float64}, u2::Vector{Float64}, u3::Vector{Float64})
+    # Step 1: Unit vector along u1 defines Cartesian x-axis in surface plane
     x_surf = u1 / norm(u1)
+    # Step 2: Unit surface normal vector n defines Cartesian z-axis
     n_surf = cross(u1, u2) / norm(cross(u1, u2))
+    # Step 3: Unit vector y = z x x completes right-handed orthonormal basis Q
     y_surf = cross(n_surf, x_surf)
 
     Q = [x_surf y_surf n_surf]
+    # Step 4: Transpose R = Q' yields orthogonal rotation matrix R in SO(3)
     R = Q'
     if det(R) < 0
         R = -R
@@ -86,19 +128,29 @@ end
 """
     detect_molecules(crystal::Crystal) -> Vector{MoleculeData}
 
-Extract connected components of crystal.bonds (running infer_bonds! if unassigned),
-un-wrap periodic boundary crossings via BFS, and extract intra-molecular bonding edges for each molecule.
+Extract connected components of `crystal.bonds` (running `infer_bonds!` if unassigned),
+un-wrap periodic boundary crossings via Breadth-First Search (BFS), and extract intra-molecular
+bonding edges for each molecule.
+
+# Algorithm
+1. **Graph Connected Components**: Connected sub-graphs of `crystal.bonds` define isolated molecules.
+2. **BFS Periodic Un-wrapping**: For each molecule, traverse bonded neighbors from a root atom.
+   For neighbor v of atom u, calculate nearest periodic image displacement:
+       d_frac = c_to_f * (r_v - r_u) - round(c_to_f * (r_v - r_u))
+       r_v_unwrap = r_u_unwrap + f_to_c * d_frac
+3. **Centroid & Relative Coords**: Calculate Cartesian centroid c = sum(r_unwrap) / N_m and store relative positions.
 """
 function detect_molecules(crystal::Crystal)
     c = deepcopy(crystal)
+    # Step 1: Infer crystal bonding graph if unassigned
     if ne(c.bonds) == 0
         infer_bonds!(c, true)
     end
 
+    # Step 2: Extract connected component atom index sets (molecules) from c.bonds
     conn_comps = connected_components(c.bonds)
     molecules = MoleculeData[]
 
-    # Cartesian coordinates
     coords_cart = Cart(c.atoms.coords, c.box).x
     f_to_c = c.box.f_to_c
     c_to_f = c.box.c_to_f
@@ -108,10 +160,9 @@ function detect_molecules(crystal::Crystal)
         m_species = c.atoms.species[comp]
         m_charges = has_charges(c) ? c.charges.q[comp] : zeros(Float64, n_m)
 
-        # Local atom index map
         local_map = Dict{Int, Int}(comp[i] => i for i in 1:n_m)
 
-        # BFS un-wrap relative to first atom
+        # Step 3: Breadth-First Search (BFS) coordinate un-wrapping along bonded neighbors
         unwrapped_cart = zeros(Float64, 3, n_m)
         visited = fill(false, n_m)
 
@@ -137,11 +188,11 @@ function detect_molecules(crystal::Crystal)
             end
         end
 
-        # Calculate Cartesian centroid
+        # Step 4: Compute 3D Cartesian centroid c = (1/N_m) * sum(r_unwrap)
         centroid = vec(sum(unwrapped_cart, dims=2) ./ n_m)
         relative_cart = unwrapped_cart .- centroid
 
-        # Extract intra-molecular edges from c.bonds
+        # Step 5: Extract local intra-molecular bond edges (u, v) for slab graph reconstruction
         edges = Tuple{Int, Int}[]
         comp_set = Set(comp)
         for u in comp
@@ -162,8 +213,18 @@ end
     are_terminations_equivalent(crystal::Crystal, hkl::Tuple{Int, Int, Int},
                                 z1::Float64, z2::Float64; tol::Float64=0.2) -> Bool
 
-Determine if two surface cut shifts z1 and z2 produce structurally identical
-or mirror/inversion-symmetric surface terminations.
+Determine if two surface cut shifts z1 and z2 produce structurally identical surface cuts
+via direct 3D profile matching.
+
+# Mathematical Formulation
+For candidate cuts z1 and z2, project molecular centroids along rotated surface normal z:
+    z_rel,m = mod((R * c_m)_3 - z_cut, h_layer) in [0, h_layer)
+
+Construct sorted signature profiles:
+    P(z_cut) = sort([(z_rel,m, species_sig_m)])
+
+Return `true` if and only if P(z1) and P(z2) match in species sequence and relative heights
+within distance tolerance `tol` (direct 3D translational equivalence).
 """
 function are_terminations_equivalent(
     crystal::Crystal,
@@ -175,7 +236,7 @@ function are_terminations_equivalent(
     geom = precompute_slab_geometry(crystal, hkl)
     h_layer = geom.u3_rot[3]
 
-    # Compute relative height profile and species signature for cut z1 and z2
+    # Step 1: Compute relative height profile and species signature for cut z1 and z2
     profiles1 = Tuple{Float64, Symbol}[]
     profiles2 = Tuple{Float64, Symbol}[]
 
@@ -193,7 +254,7 @@ function are_terminations_equivalent(
     sort!(profiles1, by=x -> (x[1], x[2]))
     sort!(profiles2, by=x -> (x[1], x[2]))
 
-    # Check direct 3D translational match
+    # Step 2: Direct 3D translational matching: verify species and relative heights match within tol
     for i in 1:length(profiles1)
         if profiles1[i][2] != profiles2[i][2] || abs(profiles1[i][1] - profiles2[i][1]) > tol
             return false
@@ -207,7 +268,7 @@ end
                      tol::Float64=0.5, unique_only::Bool=false) -> Vector{Float64}
 
 Identify distinct molecular surface termination plane heights along the (h,k,l) surface normal.
-If `unique_only=true`, filter out structurally and mirror-equivalent terminations.
+If `unique_only=true`, filter out structurally equivalent terminations using `are_terminations_equivalent`.
 """
 function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=0.5, unique_only::Bool=false)
     M = surface_basis(hkl)
@@ -222,7 +283,7 @@ function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Floa
 
     molecules = detect_molecules(crystal)
 
-    # Project centroids along z and wrap into single unit layer [0, h_layer)
+    # Step 1: Project molecular centroids along z and wrap into single unit layer [0, h_layer)
     z_heights = Float64[]
     for mol in molecules
         c_rot = R * mol.centroid_cart
@@ -231,7 +292,7 @@ function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Floa
     end
     sort!(z_heights)
 
-    # Cluster heights within distance tolerance `tol`
+    # Step 2: Agglomerative height clustering within distance tolerance `tol`
     clustered = Float64[]
     if !isempty(z_heights)
         current_cluster = [z_heights[1]]
@@ -250,7 +311,7 @@ function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Floa
         return clustered
     end
 
-    # Filter structurally equivalent / mirrored terminations
+    # Step 3: Optional unique_only filtering using are_terminations_equivalent
     unique_terms = Float64[clustered[1]]
     for i in 2:length(clustered)
         is_equiv = false
@@ -275,10 +336,12 @@ Calculate the minimum non-bonded atom-atom distance in the slab.
 Throws a warning if any non-bonded atom pair is closer than `min_dist`.
 """
 function check_slab_distances(slab::Crystal; min_dist::Float64=0.7)
+    # Step 1: Extract Cartesian coordinates of slab atoms
     coords = Cart(slab.atoms.coords, slab.box).x
     n = slab.atoms.n
     min_d = 1e9
 
+    # Step 2: Iterate over non-bonded atom pairs (skipping edges in slab.bonds)
     for i in 1:n, j in (i+1):n
         if has_edge(slab.bonds, i, j)
             continue
@@ -289,6 +352,7 @@ function check_slab_distances(slab::Crystal; min_dist::Float64=0.7)
         end
     end
 
+    # Step 3: Emit warning if minimum non-bonded distance < min_dist
     if min_d < min_dist
         @warn "Slab contains non-bonded atoms at distance $(round(min_d, digits=3)) Å < min_dist ($min_dist Å)"
     end
@@ -321,7 +385,20 @@ end
 """
     construct_single_slab(...) -> Crystal
 
-Internal helper constructing an individual centered slab for k_layer with preserved molecular bonds.
+Internal helper constructing an individual centered slab for `k_layer` with preserved molecular bonds.
+
+# 3D Lattice Shift Math
+When wrapping a molecule centroid across periodic layer boundaries:
+    shift_z = floor((c_rot,3 - Z_term) / h_layer)
+
+The full 3D Cartesian lattice vector shift -shift_z * u3_rot is applied across (x, y, z):
+    c_base = c_rot - shift_z * u3_rot
+
+For supercell grid indices rx, ry, kz:
+    c_cell = c_base + rx * u1_rot + ry * u2_rot + kz * u3_rot
+    c_centered = [c_cell,1, c_cell,2, (c_base,3 - Z_term) + kz * h_layer + vacuum]
+
+This guarantees exact 3D monoclinic/triclinic lattice vector alignment with zero atom overlaps.
 """
 function construct_single_slab(
     crystal::Crystal,
@@ -338,6 +415,7 @@ function construct_single_slab(
     orthogonalize::Bool=false,
     keep_molecules_whole::Bool=true
 )
+    # Step 1: Determine total cell height including top and bottom vacuum padding
     h_layer = geom.u3_rot[3]
     Nz = k_layer
     slab_height_max = Nz * h_layer
@@ -352,7 +430,7 @@ function construct_single_slab(
     end
     total_shift = term_shift + shift
 
-    # Cell vectors
+    # Step 2: Construct supercell lattice vectors under requested orthogonalization mode
     if orthogonalize
         u1_slab = [norm(geom.u1_rot) * Nx, 0.0, 0.0]
         u2_slab = [0.0, norm(geom.u2_rot) * Ny, 0.0]
@@ -370,7 +448,7 @@ function construct_single_slab(
     f_to_c_slab = [u1_slab u2_slab u3_slab]
     slab_box = Box(f_to_c_slab)
 
-    # Assemble atoms/molecules centered with vacuum at top & bottom (+ vacuum offset in z)
+    # Step 3: Assemble atoms/molecules centered in cell with +vacuum z-offset
     slab_species = Symbol[]
     slab_coords_cart = Vector{Float64}[]
     slab_charges = Float64[]
@@ -382,7 +460,7 @@ function construct_single_slab(
             z_rel = c_rot[3] - total_shift
             shift_z = floor(z_rel / h_layer)
 
-            # Apply full 3D Cartesian lattice shift -shift_z * u3_rot
+            # Step 4: Calculate 3D lattice vector wrapping shift -shift_z * u3_rot for whole molecules
             c_base = c_rot - shift_z * geom.u3_rot
             z_mod = c_base[3] - total_shift
 
@@ -399,13 +477,14 @@ function construct_single_slab(
                     push!(slab_coords_cart, r_atom)
                 end
 
-                # Preserve molecular bond edges in slab
+                # Step 5: Re-map local molecular bond edges to global slab atom indices in slab_crystal.bonds
                 for (lu, lv) in mol.edges
                     push!(slab_edges, (offset + lu, offset + lv))
                 end
             end
         end
     else
+        # Step 6: Fallback for atomic cut mode: apply 3D lattice shift -shift_z * u3_rot to individual atoms
         coords_cart_orig = Cart(crystal.atoms.coords, crystal.box).x
         for rx in 0:(Nx - 1), ry in 0:(Ny - 1), rz in 0:(Nz - 1)
             grid_shift = rx * geom.u1_rot + ry * geom.u2_rot
@@ -469,8 +548,22 @@ end
                       orthogonalize::Bool=false,
                       keep_molecules_whole::Bool=true) -> Vector{Crystal}
 
-Construct surface slabs for Miller indices (h, k, l) returning a Vector{Crystal} containing
+Construct surface slabs for Miller indices (h, k, l) returning a `Vector{Crystal}` containing
 all generated intermediate layer slabs (from 1 layer up to N_max layers).
+
+# Arguments & Keywords
+- `crystal::Crystal`: Input crystal structure.
+- `hkl::Tuple{Int, Int, Int}`: Miller indices (h, k, l) of the surface plane.
+- `max_height::Union{Nothing, Float64}`: Target maximum slab height along z in Ångströms.
+- `min_thickness::Union{Nothing, Float64}`: Target minimum slab thickness along z in Ångströms.
+- `min_size::Union{Nothing, Tuple{Float64, Float64}}`: Minimum surface supercell dimensions (Lx, Ly) in Ångströms.
+- `surface_dim::Tuple{Int, Int}`: Lateral supercell replication factors (Nx, Ny).
+- `layers::Union{Int, AbstractVector{Int}}`: Target layer count or layer range.
+- `vacuum::Float64`: Vacuum gap padding added to both top and bottom of the slab (Ångströms).
+- `termination::Int`: Index of the molecular surface termination plane cut.
+- `orthogonalize_z::Bool`: Force alpha = 90 deg and beta = 90 deg cell angles (default: `true`).
+- `orthogonalize::Bool`: Force alpha = 90 deg, beta = 90 deg, and gamma = 90 deg cell angles.
+- `keep_molecules_whole::Bool`: Preserve intact molecules across surface cuts (default: `true`).
 """
 function make_slab(
     crystal::Crystal,
@@ -488,7 +581,7 @@ function make_slab(
     orthogonalize::Bool=false,
     keep_molecules_whole::Bool=true
 )
-    # Guard clauses and input validation
+    # Step 1: Input validation guard clauses for vacuum, dimensions, and layer counts
     if vacuum < 0.0
         throw(ArgumentError("vacuum padding must be non-negative, got $vacuum"))
     end
@@ -507,7 +600,7 @@ function make_slab(
 
     geom = precompute_slab_geometry(crystal, hkl)
 
-    # Determine lateral surface replication Nx, Ny
+    # Step 2: Calculate minimum lateral surface replication factors (Nx, Ny)
     L1 = norm(geom.u1_rot)
     L2 = norm(geom.u2_rot)
 
@@ -517,7 +610,7 @@ function make_slab(
         Ny = max(1, ceil(Int, min_size[2] / L2))
     end
 
-    # Determine layer range 1:N_max
+    # Step 3: Determine maximum layer count N_max
     h_layer = geom.u3_rot[3]
     N_max = 1
 
@@ -533,7 +626,7 @@ function make_slab(
 
     slabs = Vector{Crystal}(undef, N_max)
 
-    # Parallel construction over all layer counts
+    # Step 4: Parallel execution over layer series k in 1:N_max via Threads.@threads
     Threads.@threads for k in 1:N_max
         slabs[k] = construct_single_slab(
             crystal,
