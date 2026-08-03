@@ -149,8 +149,43 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         end
     end
 
+    @testset "Surface Dipole & Tasker Surface Classification" begin
+        # 1. Point charge dipole math test
+        box_test = Box([10.0 0.0 0.0; 0.0 10.0 0.0; 0.0 0.0 10.0])
+        coords_cart = Cart([0.0 0.0; 0.0 0.0; 2.0 0.0]) # +1.0 at z=2.0 Å, -1.0 at z=0.0 Å
+        coords_frac = Frac(coords_cart, box_test)
+        atoms_test = Atoms([:Na, :Cl], coords_frac)
+        charges_test = Charges([1.0, -1.0], coords_frac)
+        dipole_xtal = Crystal("dipole_test", box_test, atoms_test, charges_test)
+
+        mu = dipole_moment(dipole_xtal)
+        @test isapprox(mu, [0.0, 0.0, 2.0], atol=1e-5)
+
+        mu_debye = dipole_moment(dipole_xtal; debye=true)
+        @test isapprox(mu_debye, [0.0, 0.0, 2.0 * 4.803204], atol=1e-4)
+
+        @test surface_dipole_moment(dipole_xtal) == 2.0
+        @test is_polar_surface(dipole_xtal) == true
+
+        # 2. Aspirin non-polar surface slab tests
+        aspirin_xtal = Crystal("aspirin.cif")
+        aspirin_chg = assign_charges(aspirin_xtal, Dict(:C => 0.1, :H => 0.05, :O => -0.325), Inf)
+        aspirin_slabs = make_slab(aspirin_chg, (0, 0, 1); vacuum=10.0, layers=1)
+        @test isapprox(surface_dipole_moment(aspirin_slabs[1]), 0.0, atol=1e-4)
+        @test is_polar_surface(aspirin_slabs[1]) == false
+        @test tasker_type(aspirin_chg, (0, 0, 1)) == :Type_I
+
+        # 3. get_terminations nonpolar_only option
+        np_terms = get_terminations(aspirin_chg, (0, 0, 1); unique_only=true, nonpolar_only=true)
+        @test length(np_terms) == 2
+    end
+
     @testset "Error Handling & Input Validation" begin
         xtal = Crystal("SBMOF-1.cif")
+        box_test = Box([10.0 0.0 0.0; 0.0 10.0 0.0; 0.0 0.0 10.0])
+        coords_frac = Frac(Cart([0.0 0.0; 0.0 0.0; 0.0 0.0]), box_test)
+        atoms_test = Atoms([:C, :H], coords_frac)
+        no_chg_xtal = Crystal("no_chg", box_test, atoms_test, Charges([0.0, 0.0], coords_frac))
 
         @test_throws ArgumentError make_slab(xtal, (0, 0, 0))
         @test_throws ArgumentError make_slab(xtal, (1, 0, 0); vacuum=-5.0)
@@ -158,6 +193,7 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test_throws ArgumentError make_slab(xtal, (1, 0, 0); min_thickness=-1.0)
         @test_throws ArgumentError make_slab(xtal, (1, 0, 0); min_size=(-5.0, 10.0))
         @test_throws ArgumentError make_slab(xtal, (1, 0, 0); layers=0)
+        @test_throws ArgumentError dipole_moment(no_chg_xtal) # Zero/unassigned charges exception
     end
 
 end

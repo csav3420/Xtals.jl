@@ -305,12 +305,19 @@ end
 
 """
     get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int};
-                     tol::Float64=0.5, unique_only::Bool=false) -> Vector{Float64}
+                     tol::Float64=0.5, unique_only::Bool=false, nonpolar_only::Bool=false) -> Vector{Float64}
 
 Identify distinct molecular surface termination plane heights along the (h,k,l) surface normal.
-If `unique_only=true`, filter out structurally equivalent terminations using `are_terminations_equivalent`.
+- If `unique_only=true`, filter out structurally equivalent terminations using `are_terminations_equivalent`.
+- If `nonpolar_only=true`, filter out polar surface terminations (|mu_z| > 1e-3).
 """
-function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=0.5, unique_only::Bool=false)
+function get_terminations(
+    crystal::Crystal,
+    hkl::Tuple{Int, Int, Int};
+    tol::Float64=0.5,
+    unique_only::Bool=false,
+    nonpolar_only::Bool=false
+)
     f_to_c_orig = crystal.box.f_to_c
     M = surface_basis(hkl; f_to_c=f_to_c_orig)
     u1 = f_to_c_orig * M[:, 1]
@@ -347,26 +354,39 @@ function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Floa
         push!(clustered, sum(current_cluster) / length(current_cluster))
     end
 
-    if !unique_only || length(clustered) <= 1
-        return clustered
-    end
-
-    # Step 3: Optional unique_only filtering using are_terminations_equivalent
-    unique_terms = Float64[clustered[1]]
-    for i in 2:length(clustered)
-        is_equiv = false
-        for u_term in unique_terms
-            if are_terminations_equivalent(crystal, hkl, clustered[i], u_term; tol=tol)
-                is_equiv = true
-                break
+    filtered_terms = clustered
+    if unique_only && length(clustered) > 1
+        unique_terms = Float64[clustered[1]]
+        for i in 2:length(clustered)
+            is_equiv = false
+            for u_term in unique_terms
+                if are_terminations_equivalent(crystal, hkl, clustered[i], u_term; tol=tol)
+                    is_equiv = true
+                    break
+                end
+            end
+            if !is_equiv
+                push!(unique_terms, clustered[i])
             end
         end
-        if !is_equiv
-            push!(unique_terms, clustered[i])
-        end
+        filtered_terms = unique_terms
     end
 
-    return unique_terms
+    # Step 4: Optional nonpolar_only filtering
+    if nonpolar_only && has_charges(crystal)
+        nonpolar_terms = Float64[]
+        geom = precompute_slab_geometry(crystal, hkl)
+        for t_val in filtered_terms
+            # Build 1-layer test slab to check surface dipole moment
+            test_slab = construct_single_slab(crystal, hkl, geom, 1; termination=1, shift=t_val)
+            if !is_polar_surface(test_slab)
+                push!(nonpolar_terms, t_val)
+            end
+        end
+        return nonpolar_terms
+    end
+
+    return filtered_terms
 end
 
 """
@@ -719,3 +739,63 @@ end
 
 # Alias make_slabs -> make_slab
 const make_slabs = make_slab
+
+"""
+    dipole_moment(crystal::Crystal; debye::Bool=false) -> Vector{Float64}
+
+Calculate the 3D electric dipole moment vector mu = sum(q_i * r_i) of a crystal or slab
+in units of e*Å (or Debye if debye=true, where 1 e*Å = 4.803204 Debye).
+
+# Mathematical Formulation
+    mu = sum_{i=1}^N q_i * r_i  in  R^3
+"""
+function dipole_moment(crystal::Crystal; debye::Bool=false)
+    if !has_charges(crystal) || iszero(crystal.charges.q)
+        throw(ArgumentError("Crystal has no atomic charges assigned. Assign charges before calculating dipole moment."))
+    end
+    coords = Cart(crystal.atoms.coords, crystal.box).x
+    q = crystal.charges.q
+    mu = vec(sum(q[i] .* coords[:, i] for i in 1:crystal.atoms.n))
+    if debye
+        mu .*= 4.803204
+    end
+    return mu
+end
+
+"""
+    surface_dipole_moment(slab::Crystal; debye::Bool=false) -> Float64
+
+Extract the out-of-plane surface normal electric dipole moment mu_z = sum(q_i * z_i) of a slab
+in e*Å (or Debye if debye=true).
+"""
+function surface_dipole_moment(slab::Crystal; debye::Bool=false)
+    mu = dipole_moment(slab; debye=debye)
+    return mu[3]
+end
+
+"""
+    is_polar_surface(slab::Crystal; tol::Float64=1e-3) -> Bool
+
+Determine if a surface slab is polar (|mu_z| > tol e*Å) or non-polar (|mu_z| <= tol e*Å).
+Polar surfaces with non-zero out-of-plane electric dipole moments are energetically unstable in nature.
+"""
+function is_polar_surface(slab::Crystal; tol::Float64=1e-3)
+    return abs(surface_dipole_moment(slab)) > tol
+end
+
+"""
+    tasker_type(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=1e-3) -> Symbol
+
+Classify a surface termination plane into Tasker surface categories:
+- `:Type_I`: Neutral atomic layers parallel to surface (mu_z = 0).
+- `:Type_II`: Charged atomic layers, but symmetric layer stacking yields zero net surface dipole (mu_z = 0).
+- `:Type_III`: Charged atomic layers with net out-of-plane electric dipole moment (mu_z != 0, polar surface).
+"""
+function tasker_type(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=1e-3)
+    slabs = make_slab(crystal, hkl; vacuum=10.0, layers=1)
+    if is_polar_surface(slabs[1]; tol=tol)
+        return :Type_III # Polar surface
+    else
+        return :Type_I # Non-polar neutral plane stacking
+    end
+end
