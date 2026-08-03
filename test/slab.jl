@@ -136,6 +136,17 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
 
         u_terms_010 = get_terminations(aspirin, (0, 1, 0); unique_only=true)
         @test length(u_terms_010) == 2
+
+        # Test High Miller Index Minimal Basis (det(M)=1) & Gap-Free Supercell Size Control
+        for hkl_high in [(2, 1, 2), (3, 1, 2), (3, 2, 1)]
+            M_high = Xtals.surface_basis(hkl_high; f_to_c=aspirin.box.f_to_c)
+            @test abs(round(Int, det(M_high))) == 1
+
+            slabs_high = make_slab(aspirin, hkl_high; min_size=(15.0, 15.0), vacuum=10.0, layers=1)
+            @test length(slabs_high) >= 1
+            min_d_high = check_slab_distances(slabs_high[1])
+            @test min_d_high >= 1.4
+        end
     end
 
     @testset "Error Handling & Input Validation" begin

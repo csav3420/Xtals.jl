@@ -26,29 +26,26 @@ struct MoleculeData
 end
 
 """
-    surface_basis(hkl::Tuple{Int, Int, Int}) -> Matrix{Int}
+    surface_basis(hkl::Tuple{Int, Int, Int}; f_to_c::Union{Nothing, Matrix{Float64}}=nothing) -> Matrix{Int}
 
 Compute a 3x3 integer transformation matrix M = [m1 m2 m3] for Miller indices (h, k, l)
-where m1 and m2 lie in the (h, k, l) surface plane, m3 is out-of-plane, and det(M) > 0.
+where m1 and m2 lie in the (h, k, l) surface plane, m3 is out-of-plane, det(M) = 1, and m1, m2
+are the shortest primitive in-plane lattice vectors.
 
 # Mathematical Formulation
 Given Miller indices (h, k, l), the surface plane equation in direct space is:
     h*x + k*y + l*z = 0
 
-1. **In-plane vector m1**:
-   Constructed perpendicular to (h, k, l). If h, k != 0:
-       m1 = [-k / gcd(h,k), h / gcd(h,k), 0]^T
-2. **In-plane vector m2**:
-   Constructed perpendicular to both (h, k, l) and m1 via cross product:
-       m2_raw = (h, k, l) x m1
-       m2 = m2_raw / gcd(m2_raw)
-3. **Out-of-plane vector m3**:
-   Calculated using Bezout's identity via the Extended Euclidean Algorithm (`gcdx`)
-   to guarantee an integer matrix with unimodular determinant |det(M)| = 1.
-4. **Determinant Orientation**:
-   If det(M) < 0, m1 is inverted to enforce a right-handed system (det(M) > 0).
+1. **Primitive In-plane Vector Search**:
+   Find all short integer vectors m in Z^3 satisfying h*mx + k*my + l*mz = 0 with gcd(|mx|, |my|, |mz|) = 1.
+   Sort candidate vectors by real-space Cartesian length ||f_to_c * m|| (if f_to_c provided) or ||m||.
+2. **Minimal Primitive Surface Basis**:
+   Select m1 as the shortest primitive in-plane vector. Select m2 as the shortest in-plane vector
+   linearly independent from m1 such that an out-of-plane vector m3 in Z^3 exists with det([m1 m2 m3]) = 1.
+3. **Determinant Orientation**:
+   If det(M) < 0, m1 is inverted to enforce a right-handed system (det(M) = 1).
 """
-function surface_basis(hkl::Tuple{Int, Int, Int})
+function surface_basis(hkl::Tuple{Int, Int, Int}; f_to_c::Union{Nothing, Matrix{Float64}}=nothing)
     h, k, l = hkl
     # Step 1: Guard against invalid (0, 0, 0) Miller indices
     if h == 0 && k == 0 && l == 0
@@ -58,38 +55,81 @@ function surface_basis(hkl::Tuple{Int, Int, Int})
     # Step 2: Reduce Miller indices by their greatest common divisor
     g_hkl = gcd(gcd(h, k), l)
     h_c, k_c, l_c = div(h, g_hkl), div(k, g_hkl), div(l, g_hkl)
-    v_hkl = [h_c, k_c, l_c]
 
-    # Step 3: Construct first in-plane lattice vector m1 perpendicular to (h, k, l)
-    g_hk = gcd(h_c, k_c)
-    if g_hk == 0
-        m1 = [1, 0, 0]
+    # Step 3: Search for short coprime in-plane integer vectors m in Z^3 satisfying h_c*mx + k_c*my + l_c*mz = 0
+    in_plane = Vector{Int}[]
+    for mx in -5:5, my in -5:5, mz in -5:5
+        if mx == 0 && my == 0 && mz == 0
+            continue
+        end
+        if h_c * mx + k_c * my + l_c * mz == 0
+            if gcd(gcd(abs(mx), abs(my)), abs(mz)) == 1
+                push!(in_plane, [mx, my, mz])
+            end
+        end
+    end
+
+    # Sort by real-space Cartesian length if f_to_c provided, else integer norm
+    if f_to_c !== nothing
+        sort!(in_plane, by=m -> norm(f_to_c * m))
     else
-        m1 = [div(-k_c, g_hk), div(h_c, g_hk), 0]
+        sort!(in_plane, by=m -> norm(m))
     end
 
-    # Step 4: Construct second in-plane vector m2 perpendicular to v_hkl and m1 via cross product
-    m2_raw = cross(v_hkl, m1)
-    g_m2 = gcd(gcd(m2_raw[1], m2_raw[2]), m2_raw[3])
-    m2 = div.(m2_raw, g_m2)
+    # Step 4: Find shortest primitive vectors m1, m2, m3 such that det([m1 m2 m3]) == 1
+    m1 = in_plane[1]
+    m2 = m1
+    m3 = [0, 0, 0]
 
-    # Step 5: Construct out-of-plane vector m3 via Bezout's identity (gcdx) to guarantee det(M) = 1
-    if g_hk == 0
-        m3 = [0, 0, sign(l_c)]
+    candidates = Tuple{Float64, Vector{Int}, Vector{Int}}[]
+
+    for m in in_plane
+        if norm(cross(m1, m)) > 1e-5
+            for m3x in -3:3, m3y in -3:3, m3z in -3:3
+                M_cand = [m1 m [m3x, m3y, m3z]]
+                d = round(Int, det(M_cand))
+                if d == 1 || d == -1
+                    m3_vec = d < 0 ? -[m3x, m3y, m3z] : [m3x, m3y, m3z]
+                    m3_cart = (f_to_c !== nothing) ? (f_to_c * m3_vec) : Float64.(m3_vec)
+                    m2_cart = (f_to_c !== nothing) ? (f_to_c * m) : Float64.(m)
+                    cost = norm(m2_cart) + norm(m3_cart)
+                    push!(candidates, (cost, m, m3_vec))
+                end
+            end
+        end
+    end
+
+    if !isempty(candidates)
+        sort!(candidates, by=x -> x[1])
+        m2 = candidates[1][2]
+        m3 = candidates[1][3]
     else
-        g_all, s_hk, t_l = gcdx(g_hk, l_c)
-        _, s_h, t_k = gcdx(h_c, k_c)
-        m3 = [s_hk * s_h, s_hk * t_k, t_l]
+        # Fallback to Bezout construction if search didn't close (rare)
+        g_hk = gcd(h_c, k_c)
+        if g_hk == 0
+            m1 = [1, 0, 0]
+        else
+            m1 = [div(-k_c, g_hk), div(h_c, g_hk), 0]
+        end
+        m2_raw = cross([h_c, k_c, l_c], m1)
+        g_m2 = gcd(gcd(m2_raw[1], m2_raw[2]), m2_raw[3])
+        m2 = div.(m2_raw, g_m2)
+        if g_hk == 0
+            m3 = [0, 0, sign(l_c)]
+        else
+            g_all, s_hk, t_l = gcdx(g_hk, l_c)
+            _, s_h, t_k = gcdx(h_c, k_c)
+            m3 = [s_hk * s_h, s_hk * t_k, t_l]
+        end
     end
 
-    # Step 6: Enforce positive determinant det(M) > 0 for a right-handed cell coordinate system
-    det_M = round(Int, det([m1 m2 m3]))
-    if det_M < 0
-        m1 = -m1
-        det_M = round(Int, det([m1 m2 m3]))
-    end
-
+    # Step 5: Enforce positive determinant det(M) > 0 for a right-handed cell coordinate system
     M = [m1 m2 m3]
+    if round(Int, det(M)) < 0
+        m1 = -m1
+        M = [m1 m2 m3]
+    end
+
     return M
 end
 
@@ -271,8 +311,8 @@ Identify distinct molecular surface termination plane heights along the (h,k,l) 
 If `unique_only=true`, filter out structurally equivalent terminations using `are_terminations_equivalent`.
 """
 function get_terminations(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=0.5, unique_only::Bool=false)
-    M = surface_basis(hkl)
     f_to_c_orig = crystal.box.f_to_c
+    M = surface_basis(hkl; f_to_c=f_to_c_orig)
     u1 = f_to_c_orig * M[:, 1]
     u2 = f_to_c_orig * M[:, 2]
     u3 = f_to_c_orig * M[:, 3]
@@ -366,8 +406,8 @@ end
 Internal helper to pre-calculate transformation matrices, rotated cell vectors, and molecular data.
 """
 function precompute_slab_geometry(crystal::Crystal, hkl::Tuple{Int, Int, Int})
-    M = surface_basis(hkl)
     f_to_c_orig = crystal.box.f_to_c
+    M = surface_basis(hkl; f_to_c=f_to_c_orig)
     u1 = f_to_c_orig * M[:, 1]
     u2 = f_to_c_orig * M[:, 2]
     u3 = f_to_c_orig * M[:, 3]
@@ -377,9 +417,38 @@ function precompute_slab_geometry(crystal::Crystal, hkl::Tuple{Int, Int, Int})
     u2_rot = R * u2
     u3_rot = R * u3
 
-    molecules = detect_molecules(crystal)
+    mols_base = detect_molecules(crystal)
 
-    return (M=M, R=R, u1_rot=u1_rot, u2_rot=u2_rot, u3_rot=u3_rot, molecules=molecules)
+    # Determine integer primitive cell shifts inside surface basis cell M
+    det_M = abs(round(Int, det(M)))
+    inv_M = inv(Float64.(M))
+    primitive_shifts = Vector{Int}[]
+
+    if det_M == 1
+        push!(primitive_shifts, [0, 0, 0])
+    else
+        min_p = minimum(M, dims=2) .- 3
+        max_p = maximum(M, dims=2) .+ 3
+        for px in min_p[1]:max_p[1], py in min_p[2]:max_p[2], pz in min_p[3]:max_p[3]
+            p = [px, py, pz]
+            w = inv_M * p
+            if -1e-7 <= w[1] < 1.0 - 1e-7 && -1e-7 <= w[2] < 1.0 - 1e-7 && -1e-7 <= w[3] < 1.0 - 1e-7
+                push!(primitive_shifts, p)
+            end
+        end
+    end
+
+    # Expand base primitive molecules over all primitive cell shifts inside M
+    molecules_expanded = MoleculeData[]
+    for p in primitive_shifts
+        p_cart = f_to_c_orig * p
+        for m in mols_base
+            c_shifted = m.centroid_cart + p_cart
+            push!(molecules_expanded, MoleculeData(m.atom_indices, m.species, m.relative_coords_cart, m.charges, c_shifted, m.edges))
+        end
+    end
+
+    return (M=M, R=R, u1_rot=u1_rot, u2_rot=u2_rot, u3_rot=u3_rot, molecules=molecules_expanded)
 end
 
 """
