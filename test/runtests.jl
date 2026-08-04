@@ -1,18 +1,19 @@
 testfiles = [
-    "crystal.jl"
-    "bonds.jl"
-    "misc.jl"
-    "matter.jl"
-    "distance.jl"
-    "box.jl"
-    "assert_p1_symmetry.jl"
-    "paths.jl"
-    "slab.jl"
+    "crystal.jl",
+    "bonds.jl",
+    "misc.jl",
+    "matter.jl",
+    "distance.jl",
+    "box.jl",
+    "assert_p1_symmetry.jl",
+    "paths.jl",
+    "slab.jl",
+    "benchmarks.jl"
 ]
 
 @assert (VERSION.major == 1) && (VERSION.minor ≥ 6) "Minimum Julia version not met."
 
-using Documenter, IOCapture, Logging, Test, Xtals
+using Documenter, IOCapture, LinearAlgebra, Logging, Test, Xtals
 
 Xtals.banner()
 

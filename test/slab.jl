@@ -36,8 +36,8 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     end
 
     @testset "Cartesian z-Alignment & Dual Vacuum" begin
-        xtal = Crystal("SBMOF-1.cif")
-        slabs = make_slab(xtal, (1, 0, 0); vacuum=12.0, layers=1)
+        xtal = Crystal("aspirin.cif")
+        slabs = make_slab(xtal, (1, 0, 0); vacuum=100.0, layers=1)
         slab = slabs[1]
 
         # Cell vectors u1, u2 in x-y plane (z ≈ 0)
@@ -45,12 +45,12 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test isapprox(f2c[3, 1], 0.0, atol=1e-5)
         @test isapprox(f2c[3, 2], 0.0, atol=1e-5)
 
-        # Total cell height includes 2 * vacuum (24.0 Å)
-        @test f2c[3, 3] >= 24.0
+        # Total cell height includes 2 * vacuum (200.0 Å)
+        @test f2c[3, 3] >= 200.0
     end
 
     @testset "Cell Angle Orthogonalization" begin
-        xtal = Crystal("SBMOF-1.cif")
+        xtal = Crystal("aspirin.cif")
 
         # orthogonalize_z = true (default) -> alpha=90°, beta=90°
         slabs_z = make_slab(xtal, (1, 0, 0); vacuum=10.0, orthogonalize_z=true)
@@ -67,13 +67,13 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     end
 
     @testset "Surface Dimensions & Layer Series" begin
-        xtal = Crystal("SBMOF-1.cif")
+        xtal = Crystal("aspirin.cif")
 
         # Target min surface size
-        slabs = make_slab(xtal, (1, 0, 0); min_size=(15.0, 15.0), vacuum=10.0)
+        slabs = make_slab(xtal, (1, 0, 0); min_size=(25.0, 50.0), vacuum=10.0)
         box = slabs[1].box
-        @test box.a >= 15.0
-        @test box.b >= 15.0
+        @test box.a >= 25.0
+        @test box.b >= 50.0
 
         # Multi-layer series outputs
         slabs_series = make_slab(xtal, (1, 0, 0); max_height=30.0, min_size=(10.0, 10.0))
@@ -87,7 +87,7 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     end
 
     @testset "Molecular Centroids, Terminations & Bond Preservation" begin
-        xtal = Crystal("SBMOF-1.cif")
+        xtal = Crystal("aspirin.cif")
         infer_bonds!(xtal, true)
 
         # Detect molecules
@@ -196,7 +196,7 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     end
 
     @testset "Error Handling & Input Validation" begin
-        xtal = Crystal("SBMOF-1.cif")
+        xtal = Crystal("aspirin.cif")
         box_test = Box([10.0 0.0 0.0; 0.0 10.0 0.0; 0.0 0.0 10.0])
         coords_frac = Frac(Cart([0.0 0.0; 0.0 0.0; 0.0 0.0]), box_test)
         atoms_test = Atoms([:C, :H], coords_frac)
