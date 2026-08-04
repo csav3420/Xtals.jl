@@ -1,4 +1,4 @@
-using Xtals, LinearAlgebra, Test, BenchmarkTools
+using Xtals, LinearAlgebra, Test, BenchmarkTools, Dates
 
 set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
 
@@ -27,27 +27,35 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
 
         for line in lines[2:end]
             parts = split(line, "\t")
-            if length(parts) >= 5 && parts[1] == last_ts
-                op = parts[3]
-                t_ms = parse(Float64, parts[4])
-                m_mb = parse(Float64, parts[5])
-                last_run[op] = (t_ms, m_mb)
+            if parts[1] == last_ts
+                if length(parts) >= 6
+                    op = parts[4]
+                    t_ms = parse(Float64, parts[5])
+                    m_mb = parse(Float64, parts[6])
+                    last_run[op] = (t_ms, m_mb)
+                elseif length(parts) == 5
+                    op = parts[3]
+                    t_ms = parse(Float64, parts[4])
+                    m_mb = parse(Float64, parts[5])
+                    last_run[op] = (t_ms, m_mb)
+                end
             end
         end
         return last_run
     end
 
     prev_run = load_last_run(tsv_file)
-    current_ts = string(round(Int, time()))
+    current_ts = Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")
+    num_threads = Threads.nthreads()
 
     if !isfile(tsv_file)
         open(tsv_file, "w") do io
-            println(io, "timestamp\tjulia_version\toperation\ttime_ms\tmemory_mb")
+            println(io, "timestamp\tjulia_version\tthreads\toperation\ttime_ms\tmemory_mb")
         end
     end
 
     println("\n==========================================================================================")
-    println("             XTALS BENCHMARKTOOLS STATISTICAL TIMELINE TRACKER                           ")
+    println("             XTALS BENCHMARKTOOLS STATISTICAL TIMELINE TRACKER (Threads: $(num_threads))        ")
     println("==========================================================================================")
     println("Operation                               | Med Time(ms) | Memory (MB) | Timeline vs Prev Run")
     println("------------------------------------------------------------------------------------------")
@@ -60,9 +68,9 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         time_ms = round(BenchmarkTools.time(med_t) / 1e6, digits=2)
         mem_mb = round(BenchmarkTools.memory(med_t) / (1024.0 * 1024.0), digits=2)
 
-        # Append to TSV log file
+        # Append to TSV log file with thread count
         open(tsv_file, "a") do io
-            println(io, "$current_ts\t$(VERSION)\t$op_name\t$time_ms\t$mem_mb")
+            println(io, "$current_ts\t$(VERSION)\t$num_threads\t$op_name\t$time_ms\t$mem_mb")
         end
 
         change_str = "Initial Run"

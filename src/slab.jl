@@ -267,28 +267,28 @@ Return `true` if and only if P(z1) and P(z2) match in species sequence and relat
 within distance tolerance `tol` (direct 3D translational equivalence).
 """
 function are_terminations_equivalent(
-    crystal::Crystal,
-    hkl::Tuple{Int, Int, Int},
+    geom,
     z1::Float64,
     z2::Float64;
     tol::Float64=0.2
 )
-    geom = precompute_slab_geometry(crystal, hkl)
     h_layer = geom.u3_rot[3]
 
     # Step 1: Compute relative height profile and species signature for cut z1 and z2
     profiles1 = Tuple{Float64, Symbol}[]
     profiles2 = Tuple{Float64, Symbol}[]
 
-    for mol in geom.molecules
-        c_rot = geom.R * mol.centroid_cart
-        sp_sig = Symbol(join(sort(string.(mol.species))))
+    if !isempty(geom.molecules)
+        for mol in geom.molecules
+            c_rot = geom.R * mol.centroid_cart
+            sp_sig = Symbol(join(sort(string.(mol.species))))
 
-        zh1 = mod(c_rot[3] - z1, h_layer)
-        zh2 = mod(c_rot[3] - z2, h_layer)
+            zh1 = mod(c_rot[3] - z1, h_layer)
+            zh2 = mod(c_rot[3] - z2, h_layer)
 
-        push!(profiles1, (zh1, sp_sig))
-        push!(profiles2, (zh2, sp_sig))
+            push!(profiles1, (zh1, sp_sig))
+            push!(profiles2, (zh2, sp_sig))
+        end
     end
 
     sort!(profiles1, by=x -> (x[1], x[2]))
@@ -301,6 +301,17 @@ function are_terminations_equivalent(
         end
     end
     return true
+end
+
+function are_terminations_equivalent(
+    crystal::Crystal,
+    hkl::Tuple{Int, Int, Int},
+    z1::Float64,
+    z2::Float64;
+    tol::Float64=0.2
+)
+    geom = precompute_slab_geometry(crystal, hkl)
+    return are_terminations_equivalent(geom, z1, z2; tol=tol)
 end
 
 """
@@ -318,24 +329,23 @@ function get_terminations(
     unique_only::Bool=false,
     nonpolar_only::Bool=false
 )
-    f_to_c_orig = crystal.box.f_to_c
-    M = surface_basis(hkl; f_to_c=f_to_c_orig)
-    u1 = f_to_c_orig * M[:, 1]
-    u2 = f_to_c_orig * M[:, 2]
-    u3 = f_to_c_orig * M[:, 3]
+    geom = precompute_slab_geometry(crystal, hkl)
+    R = geom.R
+    h_layer = geom.u3_rot[3]
 
-    R = rotation_matrix_to_z(u1, u2, u3)
-    u3_rot = R * u3
-    h_layer = u3_rot[3]
-
-    molecules = detect_molecules(crystal)
-
-    # Step 1: Project molecular centroids along z and wrap into single unit layer [0, h_layer)
+    # Step 1: Project molecular centroids (or atomic positions) along z into single unit layer [0, h_layer)
     z_heights = Float64[]
-    for mol in molecules
-        c_rot = R * mol.centroid_cart
-        z_mod = mod(c_rot[3], h_layer)
-        push!(z_heights, z_mod)
+    if !isempty(geom.molecules)
+        for mol in geom.molecules
+            c_rot = R * mol.centroid_cart
+            push!(z_heights, mod(c_rot[3], h_layer))
+        end
+    else
+        f_to_c_orig = crystal.box.f_to_c
+        for i in 1:crystal.atoms.n
+            r_rot = R * (f_to_c_orig * crystal.atoms.coords.xf[:, i])
+            push!(z_heights, mod(r_rot[3], h_layer))
+        end
     end
     sort!(z_heights)
 
@@ -360,7 +370,7 @@ function get_terminations(
         for i in 2:length(clustered)
             is_equiv = false
             for u_term in unique_terms
-                if are_terminations_equivalent(crystal, hkl, clustered[i], u_term; tol=tol)
+                if are_terminations_equivalent(geom, clustered[i], u_term; tol=tol)
                     is_equiv = true
                     break
                 end
@@ -375,9 +385,7 @@ function get_terminations(
     # Step 4: Optional nonpolar_only filtering
     if nonpolar_only && has_charges(crystal)
         nonpolar_terms = Float64[]
-        geom = precompute_slab_geometry(crystal, hkl)
         for t_val in filtered_terms
-            # Build 1-layer test slab to check surface dipole moment
             test_slab = construct_single_slab(crystal, hkl, geom, 1; termination=1, shift=t_val)
             if !is_polar_surface(test_slab)
                 push!(nonpolar_terms, t_val)
@@ -393,99 +401,57 @@ end
     check_slab_distances(slab::Crystal; min_dist::Float64=0.7) -> Float64
 
 Calculate the minimum non-bonded atom-atom distance in the slab.
-Throws a warning if any non-bonded atom pair is closer than `min_dist`.
 """
 function check_slab_distances(slab::Crystal; min_dist::Float64=0.7)
-    # Step 1: Extract Cartesian coordinates of slab atoms
-    coords = Cart(slab.atoms.coords, slab.box).x
+    c = Cart(slab.atoms.coords, slab.box).x
     n = slab.atoms.n
-    min_d = 1e9
-
-    # Step 2: Iterate over non-bonded atom pairs (skipping edges in slab.bonds)
-    for i in 1:n, j in (i+1):n
+    min_d = Inf
+    for i in 1:(n - 1), j in (i + 1):n
         if has_edge(slab.bonds, i, j)
             continue
         end
-        d = norm(coords[:, i] - coords[:, j])
+        d = norm(c[:, i] - c[:, j])
         if d < min_d
             min_d = d
         end
     end
-
-    # Step 3: Emit warning if minimum non-bonded distance < min_dist
-    if min_d < min_dist
-        @warn "Slab contains non-bonded atoms at distance $(round(min_d, digits=3)) Å < min_dist ($min_dist Å)"
-    end
-
     return min_d
 end
 
 """
-    precompute_slab_geometry(crystal::Crystal, hkl::Tuple{Int, Int, Int})
+    precompute_slab_geometry(crystal::Crystal, hkl::Tuple{Int, Int, Int}) -> NamedTuple
 
-Internal helper to pre-calculate transformation matrices, rotated cell vectors, and molecular data.
+Precomputes primitive surface basis matrix `M`, lattice rotation matrix `R`,
+rotated surface cell vectors `u1_rot`, `u2_rot`, `u3_rot`, and whole molecular clusters.
 """
 function precompute_slab_geometry(crystal::Crystal, hkl::Tuple{Int, Int, Int})
-    f_to_c_orig = crystal.box.f_to_c
-    M = surface_basis(hkl; f_to_c=f_to_c_orig)
-    u1 = f_to_c_orig * M[:, 1]
-    u2 = f_to_c_orig * M[:, 2]
-    u3 = f_to_c_orig * M[:, 3]
+    f_to_c = crystal.box.f_to_c
+    M = surface_basis(hkl; f_to_c=f_to_c)
+    u1 = f_to_c * M[:, 1]
+    u2 = f_to_c * M[:, 2]
+    u3 = f_to_c * M[:, 3]
 
     R = rotation_matrix_to_z(u1, u2, u3)
     u1_rot = R * u1
     u2_rot = R * u2
     u3_rot = R * u3
 
-    mols_base = detect_molecules(crystal)
+    molecules = detect_molecules(crystal)
 
-    # Determine integer primitive cell shifts inside surface basis cell M
-    det_M = abs(round(Int, det(M)))
-    inv_M = inv(Float64.(M))
-    primitive_shifts = Vector{Int}[]
-
-    if det_M == 1
-        push!(primitive_shifts, [0, 0, 0])
-    else
-        min_p = minimum(M, dims=2) .- 3
-        max_p = maximum(M, dims=2) .+ 3
-        for px in min_p[1]:max_p[1], py in min_p[2]:max_p[2], pz in min_p[3]:max_p[3]
-            p = [px, py, pz]
-            w = inv_M * p
-            if -1e-7 <= w[1] < 1.0 - 1e-7 && -1e-7 <= w[2] < 1.0 - 1e-7 && -1e-7 <= w[3] < 1.0 - 1e-7
-                push!(primitive_shifts, p)
-            end
-        end
-    end
-
-    # Expand base primitive molecules over all primitive cell shifts inside M
-    molecules_expanded = MoleculeData[]
-    for p in primitive_shifts
-        p_cart = f_to_c_orig * p
-        for m in mols_base
-            c_shifted = m.centroid_cart + p_cart
-            push!(molecules_expanded, MoleculeData(m.atom_indices, m.species, m.relative_coords_cart, m.charges, c_shifted, m.edges))
-        end
-    end
-
-    return (M=M, R=R, u1_rot=u1_rot, u2_rot=u2_rot, u3_rot=u3_rot, molecules=molecules_expanded)
+    return (
+        M=M,
+        R=R,
+        u1_rot=u1_rot,
+        u2_rot=u2_rot,
+        u3_rot=u3_rot,
+        molecules=molecules
+    )
 end
 
 """
-    construct_single_slab(...) -> Crystal
+    construct_single_slab(crystal, hkl, geom, k_layer; kwargs...) -> Crystal
 
-Internal helper constructing an individual centered slab for `k_layer` with preserved molecular bonds.
-
-# 3D Lattice Shift Math
-When wrapping a molecule centroid across periodic layer boundaries:
-    shift_z = floor((c_rot,3 - Z_term) / h_layer)
-
-The full 3D Cartesian lattice vector shift -shift_z * u3_rot is applied across (x, y, z):
-    c_base = c_rot - shift_z * u3_rot
-
-For supercell grid indices rx, ry, kz:
-    c_cell = c_base + rx * u1_rot + ry * u2_rot + kz * u3_rot
-    c_centered = [c_cell,1, c_cell,2, (c_base,3 - Z_term) + kz * h_layer + vacuum]
+Constructs a single 3D surface slab for a given layer count `k_layer` under `geom`.
 
 This guarantees exact 3D monoclinic/triclinic lattice vector alignment with zero atom overlaps.
 """
@@ -538,13 +504,18 @@ function construct_single_slab(
     f_to_c_slab = [u1_slab u2_slab u3_slab]
     slab_box = Box(f_to_c_slab)
 
-    # Step 3: Assemble atoms/molecules centered in cell with +vacuum z-offset
+    # Memory pre-allocation (sizehint!)
     slab_species = Symbol[]
     slab_coords_cart = Vector{Float64}[]
     slab_charges = Float64[]
     slab_edges = Tuple{Int, Int}[]
 
     if keep_molecules_whole && !isempty(geom.molecules)
+        total_atoms_est = sum(length(m.species) for m in geom.molecules) * Nx * Ny * Nz
+        sizehint!(slab_species, total_atoms_est)
+        sizehint!(slab_coords_cart, total_atoms_est)
+        sizehint!(slab_charges, total_atoms_est)
+
         for mol in geom.molecules
             c_rot = geom.R * mol.centroid_cart
             z_rel = c_rot[3] - total_shift
@@ -574,12 +545,21 @@ function construct_single_slab(
             end
         end
     else
+        total_atoms_est = crystal.atoms.n * Nx * Ny * Nz
+        sizehint!(slab_species, total_atoms_est)
+        sizehint!(slab_coords_cart, total_atoms_est)
+        if has_charges(crystal)
+            sizehint!(slab_charges, total_atoms_est)
+        end
+
         # Step 6: Fallback for atomic cut mode: apply 3D lattice shift -shift_z * u3_rot to individual atoms
         coords_cart_orig = Cart(crystal.atoms.coords, crystal.box).x
+        r_rot_base = [geom.R * coords_cart_orig[:, i] for i in 1:crystal.atoms.n]
+
         for rx in 0:(Nx - 1), ry in 0:(Ny - 1), rz in 0:(Nz - 1)
             grid_shift = rx * geom.u1_rot + ry * geom.u2_rot
             for i in 1:crystal.atoms.n
-                r_rot = geom.R * coords_cart_orig[:, i]
+                r_rot = r_rot_base[i]
                 z_rel = r_rot[3] - total_shift
                 shift_z = floor(z_rel / h_layer)
                 r_base = r_rot - shift_z * geom.u3_rot + grid_shift

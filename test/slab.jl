@@ -195,6 +195,58 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test length(np_terms) == 2
     end
 
+    @testset "Geometric Reference Assertions (Aspirin (1,1,0) Slab)" begin
+        aspirin_xtal = Crystal("aspirin.cif")
+        ref_slab = make_slab(aspirin_xtal, (1, 1, 0); vacuum=10.0, layers=1)[1]
+        
+        # Test 1: Molecule Count Reference
+        ref_mols = detect_molecules(ref_slab)
+        @test length(ref_mols) == 4
+        
+        # Test 2: Total Atom Count & Species Composition Reference
+        @test ref_slab.atoms.n == 84
+        @test count(==(Symbol("C")), ref_slab.atoms.species) == 36
+        @test count(==(Symbol("H")), ref_slab.atoms.species) == 32
+        @test count(==(Symbol("O")), ref_slab.atoms.species) == 16
+        
+        # Test 3: Molecular Centroids Reference
+        ref_centroids = sort([round.(m.centroid_cart, digits=4) for m in ref_mols], by=x->x[3])
+        expected_centroids = [
+            [-4.6281, -9.3872, 10.0501],
+            [-11.4318, -0.4829, 13.7004],
+            [-10.3761, -7.2278, 13.8006],
+            [-5.6838, 0.6297, 15.6328]
+        ]
+        expected_centroids_sorted = sort(expected_centroids, by=x->x[3])
+        for (c_calc, c_exp) in zip(ref_centroids, expected_centroids_sorted)
+            @test isapprox(c_calc, c_exp, atol=1e-3)
+        end
+        
+        # Test 4: Cell Vector Lengths Reference (a, b, c)
+        a_len = norm(ref_slab.box.a)
+        b_len = norm(ref_slab.box.b)
+        c_len = norm(ref_slab.box.c)
+        @test isapprox(a_len, 11.496000, atol=1e-4)
+        @test isapprox(b_len, 13.912005, atol=1e-4)
+        @test isapprox(c_len, 25.682860, atol=1e-4)
+        
+        # Test 5: Cell Angles Reference (alpha, beta, gamma)
+        alpha_deg = ref_slab.box.α * (180.0 / pi)
+        beta_deg  = ref_slab.box.β * (180.0 / pi)
+        gamma_deg = ref_slab.box.γ * (180.0 / pi)
+        @test isapprox(alpha_deg, 90.0, atol=1e-4)
+        @test isapprox(beta_deg, 90.0, atol=1e-4)
+        @test isapprox(gamma_deg, 70.849289, atol=1e-4)
+        
+        # Test 6: Slab Height Span & Vacuum Padding Reference
+        c_cart = Cart(ref_slab.atoms.coords, ref_slab.box).x
+        min_z = minimum(c_cart[3, :])
+        max_z = maximum(c_cart[3, :])
+        @test isapprox(min_z, 6.7908, atol=1e-3)
+        @test isapprox(max_z, 18.8464, atol=1e-3)
+        @test isapprox(max_z - min_z, 12.0556, atol=1e-3)
+    end
+
     @testset "Error Handling & Input Validation" begin
         xtal = Crystal("aspirin.cif")
         box_test = Box([10.0 0.0 0.0; 0.0 10.0 0.0; 0.0 0.0 10.0])
