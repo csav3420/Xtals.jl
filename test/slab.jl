@@ -167,7 +167,7 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test surface_dipole_moment(dipole_xtal) == 2.0
         @test is_polar_surface(dipole_xtal) == true
 
-        # 2. Aspirin non-polar surface slab tests
+        # 2. Aspirin non-polar surface slab tests & layer dipoles
         aspirin_xtal = Crystal("aspirin.cif")
         aspirin_chg = assign_charges(aspirin_xtal, Dict(:C => 0.1, :H => 0.05, :O => -0.325), Inf)
         aspirin_slabs = make_slab(aspirin_chg, (0, 0, 1); vacuum=10.0, layers=1)
@@ -175,7 +175,22 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test is_polar_surface(aspirin_slabs[1]) == false
         @test tasker_type(aspirin_chg, (0, 0, 1)) == :Type_I
 
-        # 3. get_terminations nonpolar_only option
+        # 3. Tasker Type II classification & layer_dipoles for Aspirin (1, 0, 0)
+        ld_100 = layer_dipoles(aspirin_chg, (1, 0, 0))
+        @test length(ld_100) == 4
+        @test abs(ld_100[1].mu_z) > 0.5 # Non-zero sub-layer dipole!
+        @test tasker_type(aspirin_chg, (1, 0, 0)) == :Type_II
+
+        # 4. Symmetric slab construction test (symmetric=true)
+        sym_slabs = make_slab(aspirin_xtal, (1, 1, 0); vacuum=10.0, layers=1, symmetric=true)
+        @test length(sym_slabs) >= 1
+        sym_mols = detect_molecules(sym_slabs[1])
+        @test length(sym_mols) == 4
+        m_z = sort([m.centroid_cart[3] for m in sym_mols])
+        z_mid = (m_z[1] + m_z[end]) / 2.0
+        @test isapprox(m_z[1] + m_z[end], 2 * z_mid, atol=1e-4) # 100% symmetric top and bottom centroids!
+
+        # 5. get_terminations nonpolar_only option
         np_terms = get_terminations(aspirin_chg, (0, 0, 1); unique_only=true, nonpolar_only=true)
         @test length(np_terms) == 2
     end

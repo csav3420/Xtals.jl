@@ -502,13 +502,14 @@ function construct_single_slab(
     tol::Float64=0.5,
     orthogonalize_z::Bool=true,
     orthogonalize::Bool=false,
-    keep_molecules_whole::Bool=true
+    keep_molecules_whole::Bool=true,
+    symmetric::Bool=false
 )
     # Step 1: Determine total cell height including top and bottom vacuum padding
     h_layer = geom.u3_rot[3]
     Nz = k_layer
-    slab_height_max = Nz * h_layer
-    total_cell_z = slab_height_max + 2.0 * vacuum
+    total_slab_z = Nz * h_layer
+    total_cell_z = total_slab_z + 2.0 * vacuum
 
     # Surface termination shift
     terminations = get_terminations(crystal, hkl; tol=tol)
@@ -596,6 +597,60 @@ function construct_single_slab(
         end
     end
 
+    # Step 7: Optional symmetric slab construction (identical top +z and bottom -z terminations)
+    if symmetric && !isempty(slab_species)
+        z_mid = vacuum + total_slab_z / 2.0
+        coords_mat_tmp = hcat(slab_coords_cart...)
+        atoms_tmp = Atoms(slab_species, Frac(Cart(coords_mat_tmp), slab_box))
+        charges_tmp = Charges(isempty(slab_charges) ? zeros(Float64, length(slab_species)) : slab_charges, atoms_tmp.coords)
+        xtal_tmp = Crystal("tmp", slab_box, atoms_tmp, charges_tmp)
+        mols_tmp = detect_molecules(xtal_tmp)
+
+        sym_species = Symbol[]
+        sym_coords = Vector{Float64}[]
+        sym_charges = Float64[]
+
+        if keep_molecules_whole && !isempty(mols_tmp)
+            top_mols = [m for m in mols_tmp if m.centroid_cart[3] >= z_mid]
+            for m in top_mols
+                c_centered = m.centroid_cart
+                for i in 1:length(m.species)
+                    push!(sym_species, m.species[i])
+                    push!(sym_charges, m.charges[i])
+                    push!(sym_coords, c_centered + m.relative_coords_cart[:, i])
+                end
+            end
+            for m in top_mols
+                c_centered = m.centroid_cart
+                c_inv = [c_centered[1], c_centered[2], 2 * z_mid - c_centered[3]]
+                for i in 1:length(m.species)
+                    push!(sym_species, m.species[i])
+                    push!(sym_charges, m.charges[i])
+                    rel = m.relative_coords_cart[:, i]
+                    push!(sym_coords, c_inv + [rel[1], rel[2], -rel[3]])
+                end
+            end
+        else
+            top_indices = [i for i in 1:length(slab_species) if coords_mat_tmp[3, i] >= z_mid]
+            for idx in top_indices
+                push!(sym_species, slab_species[idx])
+                push!(sym_coords, slab_coords_cart[idx])
+                push!(sym_charges, slab_charges[idx])
+            end
+            for idx in top_indices
+                r_orig = slab_coords_cart[idx]
+                r_inv = [r_orig[1], r_orig[2], 2 * z_mid - r_orig[3]]
+                push!(sym_species, slab_species[idx])
+                push!(sym_coords, r_inv)
+                push!(sym_charges, slab_charges[idx])
+            end
+        end
+
+        slab_species = sym_species
+        slab_coords_cart = sym_coords
+        slab_charges = sym_charges
+    end
+
     n_atoms_slab = length(slab_species)
     coords_mat = isempty(slab_coords_cart) ? zeros(Float64, 3, 0) : hcat(slab_coords_cart...)
     atoms_slab_cart = Cart(coords_mat)
@@ -611,7 +666,7 @@ function construct_single_slab(
     slab_crystal = Crystal(slab_name, slab_box, atoms_slab, charges_slab)
 
     # Populate bonds graph
-    if keep_molecules_whole && !isempty(geom.molecules)
+    if keep_molecules_whole && !isempty(geom.molecules) && !symmetric
         for (u, v) in slab_edges
             add_edge!(slab_crystal.bonds, u, v)
         end
@@ -635,7 +690,8 @@ end
                       tol::Float64=0.5,
                       orthogonalize_z::Bool=true,
                       orthogonalize::Bool=false,
-                      keep_molecules_whole::Bool=true) -> Vector{Crystal}
+                      keep_molecules_whole::Bool=true,
+                      symmetric::Bool=false) -> Vector{Crystal}
 
 Construct surface slabs for Miller indices (h, k, l) returning a `Vector{Crystal}` containing
 all generated intermediate layer slabs (from 1 layer up to N_max layers).
@@ -653,6 +709,7 @@ all generated intermediate layer slabs (from 1 layer up to N_max layers).
 - `orthogonalize_z::Bool`: Force alpha = 90 deg and beta = 90 deg cell angles (default: `true`).
 - `orthogonalize::Bool`: Force alpha = 90 deg, beta = 90 deg, and gamma = 90 deg cell angles.
 - `keep_molecules_whole::Bool`: Preserve intact molecules across surface cuts (default: `true`).
+- `symmetric::Bool`: Construct symmetric slab with identical top (+z) and bottom (-z) terminations.
 """
 function make_slab(
     crystal::Crystal,
@@ -668,7 +725,8 @@ function make_slab(
     tol::Float64=0.5,
     orthogonalize_z::Bool=true,
     orthogonalize::Bool=false,
-    keep_molecules_whole::Bool=true
+    keep_molecules_whole::Bool=true,
+    symmetric::Bool=false
 )
     # Step 1: Input validation guard clauses for vacuum, dimensions, and layer counts
     if vacuum < 0.0
@@ -784,18 +842,72 @@ function is_polar_surface(slab::Crystal; tol::Float64=1e-3)
 end
 
 """
-    tasker_type(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=1e-3) -> Symbol
+    layer_dipoles(crystal::Crystal, hkl::Tuple{Int, Int, Int}; dz_tol::Float64=0.8) -> Vector{NamedTuple}
 
-Classify a surface termination plane into Tasker surface categories:
-- `:Type_I`: Neutral atomic layers parallel to surface (mu_z = 0).
-- `:Type_II`: Charged atomic layers, but symmetric layer stacking yields zero net surface dipole (mu_z = 0).
-- `:Type_III`: Charged atomic layers with net out-of-plane electric dipole moment (mu_z != 0, polar surface).
+Calculate sub-layer charges, average z-heights, layer dipole vectors mu_layer, and out-of-plane
+dipole components mu_z for all sub-layers along the (h,k,l) surface normal in the crystal.
 """
-function tasker_type(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=1e-3)
-    slabs = make_slab(crystal, hkl; vacuum=10.0, layers=1)
-    if is_polar_surface(slabs[1]; tol=tol)
-        return :Type_III # Polar surface
+function layer_dipoles(crystal::Crystal, hkl::Tuple{Int, Int, Int}; dz_tol::Float64=0.8)
+    if !has_charges(crystal) || iszero(crystal.charges.q)
+        throw(ArgumentError("Crystal has no atomic charges assigned. Assign charges before calculating layer dipoles."))
+    end
+    geom = precompute_slab_geometry(crystal, hkl)
+    coords_cart = Cart(crystal.atoms.coords, crystal.box).x
+    coords_rot = geom.R * coords_cart
+    charges = crystal.charges.q
+
+    z_coords = coords_rot[3, :]
+    perm = sortperm(z_coords)
+
+    clusters = Vector{Vector{Int}}()
+    current = [perm[1]]
+    for i in 2:length(perm)
+        idx = perm[i]
+        if z_coords[idx] - z_coords[current[end]] <= dz_tol
+            push!(current, idx)
+        else
+            push!(clusters, current)
+            current = [idx]
+        end
+    end
+    push!(clusters, current)
+
+    res = NamedTuple{(:z_avg, :charge, :mu_layer, :mu_z), Tuple{Float64, Float64, Vector{Float64}, Float64}}[]
+    for cl in clusters
+        q_l = sum(charges[idx] for idx in cl)
+        z_avg = sum(z_coords[idx] for idx in cl) / length(cl)
+        mu_l = vec(sum(charges[idx] .* (coords_rot[:, idx] .- [0.0, 0.0, z_avg]) for idx in cl))
+        push!(res, (z_avg=z_avg, charge=q_l, mu_layer=mu_l, mu_z=mu_l[3]))
+    end
+
+    return res
+end
+
+"""
+    tasker_type(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=1e-3, dz_tol::Float64=0.8) -> Symbol
+
+Classify a surface plane into Tasker surface categories (Tasker, J. Phys. C, 1979):
+- `:Type_I`: Neutral atomic/molecular layers parallel to surface (q_layer == 0 and mu_z == 0 for all layers).
+- `:Type_II`: Charged atomic layers (q_layer != 0 or mu_z != 0), but symmetric layer stacking yields zero net surface dipole (sum mu_z == 0).
+- `:Type_III`: Charged atomic layers with net out-of-plane electric dipole moment per repeat unit (sum mu_z != 0, polar surface).
+"""
+function tasker_type(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=1e-3, dz_tol::Float64=0.8)
+    if !has_charges(crystal) || iszero(crystal.charges.q)
+        slabs = make_slab(crystal, hkl; vacuum=10.0, layers=1)
+        return is_polar_surface(slabs[1]; tol=tol) ? :Type_III : :Type_I
+    end
+
+    l_data = layer_dipoles(crystal, hkl; dz_tol=dz_tol)
+    all_neutral = all(abs(ld.charge) <= tol && abs(ld.mu_z) <= tol for ld in l_data)
+
+    if all_neutral
+        return :Type_I
+    end
+
+    sum_mu_z = sum(ld.mu_z for ld in l_data)
+    if abs(sum_mu_z) <= tol
+        return :Type_II
     else
-        return :Type_I # Non-polar neutral plane stacking
+        return :Type_III
     end
 end
