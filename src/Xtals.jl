@@ -27,6 +27,7 @@ include("cpk_colors.jl")
 include("covalent_radii.jl")
 include("bonds.jl")
 include("slab.jl")
+include("adsorbate.jl")
 
 rc[:atomic_masses] = Dict([(Symbol(elem.symbol), ustrip(elem.atomic_mass)) for elem in elements[1:118]])
 rc[:cpk_colors] = DEFAULT_CPK_COLORS
@@ -117,6 +118,9 @@ export rc,
     is_polar_surface,
     layer_dipoles,
     tasker_type,
+    # adsorbate.jl
+    make_adsorbate_slab,
+    add_adsorbate!,
     get_bond_vector,
     calculate_bond_vectors!,
     clear_vectors!,
