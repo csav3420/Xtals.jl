@@ -181,18 +181,17 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test abs(ld_100[1].mu_z) > 0.5 # Non-zero sub-layer dipole!
         @test tasker_type(aspirin_chg, (1, 0, 0)) == :Type_II
 
-        # 4. Symmetric slab construction test (symmetric=true)
-        sym_slabs = make_slab(aspirin_xtal, (1, 1, 0); vacuum=10.0, layers=1, symmetric=true)
-        @test length(sym_slabs) >= 1
-        sym_mols = detect_molecules(sym_slabs[1])
-        @test length(sym_mols) == 4
-        m_z = sort([m.centroid_cart[3] for m in sym_mols])
-        z_mid = (m_z[1] + m_z[end]) / 2.0
-        @test isapprox(m_z[1] + m_z[end], 2 * z_mid, atol=1e-4) # 100% symmetric top and bottom centroids!
-
-        # 5. get_terminations nonpolar_only option
+        # 4. get_terminations nonpolar_only option
         np_terms = get_terminations(aspirin_chg, (0, 0, 1); unique_only=true, nonpolar_only=true)
         @test length(np_terms) == 2
+
+        # 5. Independent dual top and bottom surface termination test
+        dual_slabs_tuple = make_slab(aspirin_xtal, (1, 1, 0); vacuum=10.0, layers=1, termination=(1, 2))
+        @test length(dual_slabs_tuple) >= 1
+        
+        dual_slabs_kwargs = make_slab(aspirin_xtal, (1, 1, 0); vacuum=10.0, layers=1, termination_bottom=1, termination_top=2)
+        @test length(dual_slabs_kwargs) >= 1
+        @test dual_slabs_tuple[1].atoms.n == dual_slabs_kwargs[1].atoms.n
     end
 
     @testset "Geometric Reference Assertions (Aspirin (1,1,0) Slab)" begin

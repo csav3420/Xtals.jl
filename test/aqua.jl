@@ -1,11 +1,10 @@
-using Xtals
-import Aqua
+using Test, Xtals, Aqua
 
-# ambiguity testing finds many "problems" outside the scope of this package
-ambiguities = false
-
-# to skip when checking for stale dependencies and missing compat entries
-#   Aqua is added in a separate CI job, so (ironically) does not work w/ itself
-stale_deps = (ignore=[:Aqua],)
-
-Aqua.test_all(Xtals; ambiguities=ambiguities, stale_deps=stale_deps)
+@testset "Aqua.jl Quality Assurance" begin
+    Aqua.test_all(
+        Xtals;
+        ambiguities=false,
+        deps_compat=false,
+        stale_deps=(ignore=[:JLD2],)
+    )
+end

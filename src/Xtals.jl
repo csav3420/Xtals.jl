@@ -104,8 +104,6 @@ export rc,
     drop_cross_pb_bonds!,
     bondingrules,
     bond_angle,
-    view_bonding_rules,
-    bond_length,
     # slab.jl
     make_slab,
     make_slabs,

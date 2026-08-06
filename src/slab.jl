@@ -266,6 +266,17 @@ Construct sorted signature profiles:
 Return `true` if and only if P(z1) and P(z2) match in species sequence and relative heights
 within distance tolerance `tol` (direct 3D translational equivalence).
 """
+# Private helper to parse top and bottom termination indices from single/tuple/keyword options
+function _parse_terminations(
+    termination::Union{Int, Tuple{Int, Int}},
+    termination_bottom::Union{Nothing, Int},
+    termination_top::Union{Nothing, Int}
+)
+    t_bot = termination_bottom !== nothing ? termination_bottom : (termination isa Tuple ? termination[1] : termination)
+    t_top = termination_top !== nothing ? termination_top : (termination isa Tuple ? termination[2] : termination)
+    return t_bot, t_top
+end
+
 function are_terminations_equivalent(
     geom,
     z1::Float64,
@@ -273,28 +284,26 @@ function are_terminations_equivalent(
     tol::Float64=0.2
 )
     h_layer = geom.u3_rot[3]
+    n_mols = length(geom.molecules)
 
-    # Step 1: Compute relative height profile and species signature for cut z1 and z2
-    profiles1 = Tuple{Float64, Symbol}[]
-    profiles2 = Tuple{Float64, Symbol}[]
+    profiles1 = Vector{Tuple{Float64, Symbol}}()
+    profiles2 = Vector{Tuple{Float64, Symbol}}()
+    sizehint!(profiles1, n_mols)
+    sizehint!(profiles2, n_mols)
 
     if !isempty(geom.molecules)
         for mol in geom.molecules
-            c_rot = geom.R * mol.centroid_cart
+            c_rot_z = (geom.R * mol.centroid_cart)[3]
             sp_sig = Symbol(join(sort(string.(mol.species))))
 
-            zh1 = mod(c_rot[3] - z1, h_layer)
-            zh2 = mod(c_rot[3] - z2, h_layer)
-
-            push!(profiles1, (zh1, sp_sig))
-            push!(profiles2, (zh2, sp_sig))
+            push!(profiles1, (mod(c_rot_z - z1, h_layer), sp_sig))
+            push!(profiles2, (mod(c_rot_z - z2, h_layer), sp_sig))
         end
     end
 
     sort!(profiles1, by=x -> (x[1], x[2]))
     sort!(profiles2, by=x -> (x[1], x[2]))
 
-    # Step 2: Direct 3D translational matching: verify species and relative heights match within tol
     for i in 1:length(profiles1)
         if profiles1[i][2] != profiles2[i][2] || abs(profiles1[i][1] - profiles2[i][1]) > tol
             return false
@@ -463,28 +472,46 @@ function construct_single_slab(
     Nx::Int=1,
     Ny::Int=1,
     vacuum::Float64=10.0,
-    termination::Int=1,
+    termination::Union{Int, Tuple{Int, Int}}=1,
+    termination_bottom::Union{Nothing, Int}=nothing,
+    termination_top::Union{Nothing, Int}=nothing,
     shift::Float64=0.0,
+    term_shift::Union{Nothing, Float64, Tuple{Float64, Float64}}=nothing,
     tol::Float64=0.5,
     orthogonalize_z::Bool=true,
     orthogonalize::Bool=false,
-    keep_molecules_whole::Bool=true,
-    symmetric::Bool=false
+    keep_molecules_whole::Bool=true
 )
+    # Parse bottom and top termination indices
+    t_bot, t_top = _parse_terminations(termination, termination_bottom, termination_top)
+
     # Step 1: Determine total cell height including top and bottom vacuum padding
     h_layer = geom.u3_rot[3]
     Nz = k_layer
-    total_slab_z = Nz * h_layer
-    total_cell_z = total_slab_z + 2.0 * vacuum
 
-    # Surface termination shift
-    terminations = get_terminations(crystal, hkl; tol=tol)
-    term_shift = 0.0
-    if !isempty(terminations)
-        idx = mod1(termination, length(terminations))
-        term_shift = terminations[idx]
+    s_bot = 0.0
+    s_top = 0.0
+    if term_shift isa Tuple{Float64, Float64}
+        s_bot, s_top = term_shift
+    elseif term_shift isa Float64
+        s_bot = term_shift
+        s_top = term_shift
+    else
+        terminations = get_terminations(crystal, hkl; tol=tol)
+        if !isempty(terminations)
+            idx_bot = mod1(t_bot, length(terminations))
+            idx_top = mod1(t_top, length(terminations))
+            s_bot = terminations[idx_bot]
+            s_top = terminations[idx_top]
+        end
     end
-    total_shift = term_shift + shift
+
+    shift_bot = s_bot + shift
+    shift_top = s_top + shift
+
+    delta_shift = shift_top - shift_bot
+    total_slab_z = Nz * h_layer + delta_shift
+    total_cell_z = total_slab_z + 2.0 * vacuum
 
     # Step 2: Construct supercell lattice vectors under requested orthogonalization mode
     if orthogonalize
@@ -518,14 +545,19 @@ function construct_single_slab(
 
         for mol in geom.molecules
             c_rot = geom.R * mol.centroid_cart
-            z_rel = c_rot[3] - total_shift
+            z_rel = c_rot[3] - shift_bot
             shift_z = floor(z_rel / h_layer)
 
             # Step 4: Calculate 3D lattice vector wrapping shift -shift_z * u3_rot for whole molecules
             c_base = c_rot - shift_z * geom.u3_rot
-            z_mod = c_base[3] - total_shift
+            z_mod = c_base[3] - shift_bot
 
-            for rx in 0:(Nx - 1), ry in 0:(Ny - 1), kz in 0:(Nz - 1)
+            max_kz = delta_shift > 1e-5 ? Nz : (Nz - 1)
+            for rx in 0:(Nx - 1), ry in 0:(Ny - 1), kz in 0:max_kz
+                if kz == Nz && z_mod > delta_shift + 1e-5
+                    continue
+                end
+
                 c_cell = c_base + rx * geom.u1_rot + ry * geom.u2_rot + kz * geom.u3_rot
                 c_centered = [c_cell[1], c_cell[2], z_mod + kz * h_layer + vacuum]
 
@@ -556,14 +588,19 @@ function construct_single_slab(
         coords_cart_orig = Cart(crystal.atoms.coords, crystal.box).x
         r_rot_base = [geom.R * coords_cart_orig[:, i] for i in 1:crystal.atoms.n]
 
-        for rx in 0:(Nx - 1), ry in 0:(Ny - 1), rz in 0:(Nz - 1)
+        max_rz = delta_shift > 1e-5 ? Nz : (Nz - 1)
+        for rx in 0:(Nx - 1), ry in 0:(Ny - 1), rz in 0:max_rz
             grid_shift = rx * geom.u1_rot + ry * geom.u2_rot
             for i in 1:crystal.atoms.n
                 r_rot = r_rot_base[i]
-                z_rel = r_rot[3] - total_shift
+                z_rel = r_rot[3] - shift_bot
                 shift_z = floor(z_rel / h_layer)
                 r_base = r_rot - shift_z * geom.u3_rot + grid_shift
-                z_mod = r_base[3] - total_shift
+                z_mod = r_base[3] - shift_bot
+
+                if rz == Nz && z_mod > delta_shift + 1e-5
+                    continue
+                end
 
                 r_rot_centered = [r_base[1] + rz * geom.u3_rot[1],
                                   r_base[2] + rz * geom.u3_rot[2],
@@ -575,60 +612,6 @@ function construct_single_slab(
                 push!(slab_coords_cart, r_rot_centered)
             end
         end
-    end
-
-    # Step 7: Optional symmetric slab construction (identical top +z and bottom -z terminations)
-    if symmetric && !isempty(slab_species)
-        z_mid = vacuum + total_slab_z / 2.0
-        coords_mat_tmp = hcat(slab_coords_cart...)
-        atoms_tmp = Atoms(slab_species, Frac(Cart(coords_mat_tmp), slab_box))
-        charges_tmp = Charges(isempty(slab_charges) ? zeros(Float64, length(slab_species)) : slab_charges, atoms_tmp.coords)
-        xtal_tmp = Crystal("tmp", slab_box, atoms_tmp, charges_tmp)
-        mols_tmp = detect_molecules(xtal_tmp)
-
-        sym_species = Symbol[]
-        sym_coords = Vector{Float64}[]
-        sym_charges = Float64[]
-
-        if keep_molecules_whole && !isempty(mols_tmp)
-            top_mols = [m for m in mols_tmp if m.centroid_cart[3] >= z_mid]
-            for m in top_mols
-                c_centered = m.centroid_cart
-                for i in 1:length(m.species)
-                    push!(sym_species, m.species[i])
-                    push!(sym_charges, m.charges[i])
-                    push!(sym_coords, c_centered + m.relative_coords_cart[:, i])
-                end
-            end
-            for m in top_mols
-                c_centered = m.centroid_cart
-                c_inv = [c_centered[1], c_centered[2], 2 * z_mid - c_centered[3]]
-                for i in 1:length(m.species)
-                    push!(sym_species, m.species[i])
-                    push!(sym_charges, m.charges[i])
-                    rel = m.relative_coords_cart[:, i]
-                    push!(sym_coords, c_inv + [rel[1], rel[2], -rel[3]])
-                end
-            end
-        else
-            top_indices = [i for i in 1:length(slab_species) if coords_mat_tmp[3, i] >= z_mid]
-            for idx in top_indices
-                push!(sym_species, slab_species[idx])
-                push!(sym_coords, slab_coords_cart[idx])
-                push!(sym_charges, slab_charges[idx])
-            end
-            for idx in top_indices
-                r_orig = slab_coords_cart[idx]
-                r_inv = [r_orig[1], r_orig[2], 2 * z_mid - r_orig[3]]
-                push!(sym_species, slab_species[idx])
-                push!(sym_coords, r_inv)
-                push!(sym_charges, slab_charges[idx])
-            end
-        end
-
-        slab_species = sym_species
-        slab_coords_cart = sym_coords
-        slab_charges = sym_charges
     end
 
     n_atoms_slab = length(slab_species)
@@ -646,7 +629,7 @@ function construct_single_slab(
     slab_crystal = Crystal(slab_name, slab_box, atoms_slab, charges_slab)
 
     # Populate bonds graph
-    if keep_molecules_whole && !isempty(geom.molecules) && !symmetric
+    if keep_molecules_whole && !isempty(geom.molecules)
         for (u, v) in slab_edges
             add_edge!(slab_crystal.bonds, u, v)
         end
@@ -665,13 +648,14 @@ end
                       surface_dim::Tuple{Int, Int}=(1, 1),
                       layers::Union{Int, AbstractVector{Int}}=1,
                       vacuum::Float64=10.0,
-                      termination::Int=1,
+                      termination::Union{Int, Tuple{Int, Int}}=1,
+                      termination_bottom::Union{Nothing, Int}=nothing,
+                      termination_top::Union{Nothing, Int}=nothing,
                       shift::Float64=0.0,
                       tol::Float64=0.5,
                       orthogonalize_z::Bool=true,
                       orthogonalize::Bool=false,
-                      keep_molecules_whole::Bool=true,
-                      symmetric::Bool=false) -> Vector{Crystal}
+                      keep_molecules_whole::Bool=true) -> Vector{Crystal}
 
 Construct surface slabs for Miller indices (h, k, l) returning a `Vector{Crystal}` containing
 all generated intermediate layer slabs (from 1 layer up to N_max layers).
@@ -685,11 +669,12 @@ all generated intermediate layer slabs (from 1 layer up to N_max layers).
 - `surface_dim::Tuple{Int, Int}`: Lateral supercell replication factors (Nx, Ny).
 - `layers::Union{Int, AbstractVector{Int}}`: Target layer count or layer range.
 - `vacuum::Float64`: Vacuum gap padding added to both top and bottom of the slab (Ångströms).
-- `termination::Int`: Index of the molecular surface termination plane cut.
+- `termination::Union{Int, Tuple{Int, Int}}`: Index or (bottom, top) tuple of surface termination cuts.
+- `termination_bottom::Union{Nothing, Int}`: Explicit bottom surface termination cut index.
+- `termination_top::Union{Nothing, Int}`: Explicit top surface termination cut index.
 - `orthogonalize_z::Bool`: Force alpha = 90 deg and beta = 90 deg cell angles (default: `true`).
 - `orthogonalize::Bool`: Force alpha = 90 deg, beta = 90 deg, and gamma = 90 deg cell angles.
 - `keep_molecules_whole::Bool`: Preserve intact molecules across surface cuts (default: `true`).
-- `symmetric::Bool`: Construct symmetric slab with identical top (+z) and bottom (-z) terminations.
 """
 function make_slab(
     crystal::Crystal,
@@ -700,13 +685,14 @@ function make_slab(
     surface_dim::Tuple{Int, Int}=(1, 1),
     layers::Union{Int, AbstractVector{Int}}=1,
     vacuum::Float64=10.0,
-    termination::Int=1,
+    termination::Union{Int, Tuple{Int, Int}}=1,
+    termination_bottom::Union{Nothing, Int}=nothing,
+    termination_top::Union{Nothing, Int}=nothing,
     shift::Float64=0.0,
     tol::Float64=0.5,
     orthogonalize_z::Bool=true,
     orthogonalize::Bool=false,
-    keep_molecules_whole::Bool=true,
-    symmetric::Bool=false
+    keep_molecules_whole::Bool=true
 )
     # Step 1: Input validation guard clauses for vacuum, dimensions, and layer counts
     if vacuum < 0.0
@@ -726,6 +712,21 @@ function make_slab(
     end
 
     geom = precompute_slab_geometry(crystal, hkl)
+
+    # Parse bottom and top termination indices
+    t_bot, t_top = _parse_terminations(termination, termination_bottom, termination_top)
+
+    # Calculate termination shifts ONCE at top-level
+    terminations = get_terminations(crystal, hkl; tol=tol)
+    term_shift_bot = 0.0
+    term_shift_top = 0.0
+    if !isempty(terminations)
+        idx_bot = mod1(t_bot, length(terminations))
+        idx_top = mod1(t_top, length(terminations))
+        term_shift_bot = terminations[idx_bot]
+        term_shift_top = terminations[idx_top]
+    end
+    term_shift_tuple = (term_shift_bot, term_shift_top)
 
     # Step 2: Calculate minimum lateral surface replication factors (Nx, Ny)
     L1 = norm(geom.u1_rot)
@@ -764,12 +765,19 @@ function make_slab(
             Ny=Ny,
             vacuum=vacuum,
             termination=termination,
+            termination_bottom=termination_bottom,
+            termination_top=termination_top,
             shift=shift,
+            term_shift=term_shift_tuple,
             tol=tol,
             orthogonalize_z=orthogonalize_z,
             orthogonalize=orthogonalize,
             keep_molecules_whole=keep_molecules_whole
         )
+    end
+
+    if layers isa AbstractVector
+        return slabs[layers]
     end
 
     return slabs

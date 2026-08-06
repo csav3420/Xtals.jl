@@ -8,6 +8,7 @@ testfiles = [
     "assert_p1_symmetry.jl",
     "paths.jl",
     "slab.jl",
+    "aqua.jl",
     "benchmarks.jl"
 ]
 
