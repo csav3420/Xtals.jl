@@ -15,9 +15,9 @@ makedocs(;
         "computing distances" => "distance.md",
         "bonding" => "bonds.md",
         "visualization" => "visualization.md",
-        "XtalsPyTools" => "pytools.md"
+        "XtalsPyTools" => "pytools.md",
     ],
-    format=Documenter.HTML(; assets=["assets/flux.css"])
+    format=Documenter.HTML(; assets=["assets/flux.css"]),
 )
 
 deploydocs(; repo="github.com/SimonEnsemble/Xtals.jl.git")

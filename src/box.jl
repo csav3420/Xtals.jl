@@ -58,16 +58,18 @@ function Box(a::Float64, b::Float64, c::Float64, α::Float64, β::Float64, γ::F
     # unit cell volume (A³)
     Ω = a * b * c * sqrt(1 - cos(α)^2 - cos(β)^2 - cos(γ)^2 + 2 * cos(α) * cos(β) * cos(γ))
     # matrices to map fractional coords <--> Cartesian coords
-    f_to_c = [[a, 0, 0] [b * cos(γ), b * sin(γ), 0] [
-        c * cos(β),
-        c * (cos(α) - cos(β) * cos(γ)) / sin(γ),
-        Ω / (a * b * sin(γ))
-    ]]
-    c_to_f = [[1 / a, 0, 0] [-cos(γ) / (a * sin(γ)), 1 / (b * sin(γ)), 0] [
-        b * c * (cos(α) * cos(γ) - cos(β)) / (Ω * sin(γ)),
-        a * c * (cos(β) * cos(γ) - cos(α)) / (Ω * sin(γ)),
-        a * b * sin(γ) / Ω
-    ]]
+    f_to_c = [
+        [a, 0, 0] [b * cos(γ), b * sin(γ), 0] [
+            c * cos(β), c * (cos(α) - cos(β) * cos(γ)) / sin(γ), Ω / (a * b * sin(γ))
+        ]
+    ]
+    c_to_f = [
+        [1 / a, 0, 0] [-cos(γ) / (a * sin(γ)), 1 / (b * sin(γ)), 0] [
+            b * c * (cos(α) * cos(γ) - cos(β)) / (Ω * sin(γ)),
+            a * c * (cos(β) * cos(γ) - cos(α)) / (Ω * sin(γ)),
+            a * b * sin(γ) / Ω,
+        ]
+    ]
     # the columns of f_to_c are the unit cell axes
     r = reciprocal_lattice(f_to_c)
 
@@ -159,7 +161,7 @@ function replicate(box::Box, repfactors::Tuple{Int, Int, Int})
         box.c * repfactors[3],
         box.α,
         box.β,
-        box.γ
+        box.γ,
     )
 end
 
@@ -182,10 +184,7 @@ Appends ".vtk" extension to `filename` automatically if not passed.
   - `verbose::Bool`: if true, print the name of the written file to the console.
 """
 function write_vtk(
-    box::Box,
-    filename::AbstractString;
-    verbose::Bool=false,
-    center_at_origin::Bool=false
+    box::Box, filename::AbstractString; verbose::Bool=false, center_at_origin::Bool=false
 )
     if !occursin(".vtk", filename)
         filename *= ".vtk"
@@ -266,20 +265,13 @@ function Base.show(io::IO, box::Box)
         box.γ * 180.0 / π
     )
     @printf(
-        io,
-        "\tUnit cell dimensions a = %f Å. b = %f Å, c = %f Å\n",
-        box.a,
-        box.b,
-        box.c
+        io, "\tUnit cell dimensions a = %f Å. b = %f Å, c = %f Å\n", box.a, box.b, box.c
     )
     @printf(io, "\tVolume of unit cell: %f Å³\n", box.Ω)
 end
 
 function Base.isapprox(
-    box1::Box,
-    box2::Box;
-    atol::Real=0.0,
-    rtol::Real=atol > 0 ? 0.0 : sqrt(eps())
+    box1::Box, box2::Box; atol::Real=0.0, rtol::Real=atol > 0 ? 0.0 : sqrt(eps())
 )
     return (
         isapprox(box1.a, box2.a; atol=atol, rtol=rtol) &&

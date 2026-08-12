@@ -7,7 +7,6 @@ using Graphs
 set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
 
 @testset "Slab Construction" begin
-
     @testset "Miller Surface Basis" begin
         # Standard directions
         M100 = surface_basis((1, 0, 0))
@@ -99,7 +98,9 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test !isempty(terms)
 
         # Make slab and check preserved bond edges
-        slabs = make_slab(xtal, (1, 0, 0); vacuum=10.0, termination=1, keep_molecules_whole=true)
+        slabs = make_slab(
+            xtal, (1, 0, 0); vacuum=10.0, termination=1, keep_molecules_whole=true
+        )
         slab = slabs[1]
         @test ne(slab.bonds) > 0
     end
@@ -126,8 +127,12 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         # Termination equivalence check
         terms_100 = get_terminations(aspirin, (1, 0, 0))
         if length(terms_100) >= 2
-            @test !are_terminations_equivalent(aspirin, (1, 0, 0), terms_100[1], terms_100[2])
-            @test are_terminations_equivalent(aspirin, (1, 0, 0), terms_100[1], terms_100[1])
+            @test !are_terminations_equivalent(
+                aspirin, (1, 0, 0), terms_100[1], terms_100[2]
+            )
+            @test are_terminations_equivalent(
+                aspirin, (1, 0, 0), terms_100[1], terms_100[1]
+            )
         end
 
         # Test unique_only parameter in get_terminations (Strict 2-termination assertions for Aspirin 001 and 010)
@@ -142,7 +147,9 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
             M_high = Xtals.surface_basis(hkl_high; f_to_c=aspirin.box.f_to_c)
             @test abs(round(Int, det(M_high))) == 1
 
-            slabs_high = make_slab(aspirin, hkl_high; min_size=(15.0, 15.0), vacuum=10.0, layers=1)
+            slabs_high = make_slab(
+                aspirin, hkl_high; min_size=(15.0, 15.0), vacuum=10.0, layers=1
+            )
             @test length(slabs_high) >= 1
             min_d_high = check_slab_distances(slabs_high[1])
             @test min_d_high >= 1.4
@@ -169,7 +176,9 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
 
         # 2. Aspirin non-polar surface slab tests & layer dipoles
         aspirin_xtal = Crystal("aspirin.cif")
-        aspirin_chg = assign_charges(aspirin_xtal, Dict(:C => 0.1, :H => 0.05, :O => -0.325), Inf)
+        aspirin_chg = assign_charges(
+            aspirin_xtal, Dict(:C => 0.1, :H => 0.05, :O => -0.325), Inf
+        )
         aspirin_slabs = make_slab(aspirin_chg, (0, 0, 1); vacuum=10.0, layers=1)
         @test isapprox(surface_dipole_moment(aspirin_slabs[1]), 0.0, atol=1e-4)
         @test is_polar_surface(aspirin_slabs[1]) == false
@@ -182,14 +191,25 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test tasker_type(aspirin_chg, (1, 0, 0)) == :Type_II
 
         # 4. get_terminations nonpolar_only option
-        np_terms = get_terminations(aspirin_chg, (0, 0, 1); unique_only=true, nonpolar_only=true)
+        np_terms = get_terminations(
+            aspirin_chg, (0, 0, 1); unique_only=true, nonpolar_only=true
+        )
         @test length(np_terms) == 2
 
         # 5. Independent dual top and bottom surface termination test
-        dual_slabs_tuple = make_slab(aspirin_xtal, (1, 1, 0); vacuum=10.0, layers=1, termination=(1, 2))
+        dual_slabs_tuple = make_slab(
+            aspirin_xtal, (1, 1, 0); vacuum=10.0, layers=1, termination=(1, 2)
+        )
         @test length(dual_slabs_tuple) >= 1
-        
-        dual_slabs_kwargs = make_slab(aspirin_xtal, (1, 1, 0); vacuum=10.0, layers=1, termination_bottom=1, termination_top=2)
+
+        dual_slabs_kwargs = make_slab(
+            aspirin_xtal,
+            (1, 1, 0);
+            vacuum=10.0,
+            layers=1,
+            termination_bottom=1,
+            termination_top=2,
+        )
         @test length(dual_slabs_kwargs) >= 1
         @test dual_slabs_tuple[1].atoms.n == dual_slabs_kwargs[1].atoms.n
     end
@@ -197,30 +217,32 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     @testset "Geometric Reference Assertions (Aspirin (1,1,0) Slab)" begin
         aspirin_xtal = Crystal("aspirin.cif")
         ref_slab = make_slab(aspirin_xtal, (1, 1, 0); vacuum=10.0, layers=1)[1]
-        
+
         # Test 1: Molecule Count Reference
         ref_mols = detect_molecules(ref_slab)
         @test length(ref_mols) == 4
-        
+
         # Test 2: Total Atom Count & Species Composition Reference
         @test ref_slab.atoms.n == 84
         @test count(==(Symbol("C")), ref_slab.atoms.species) == 36
         @test count(==(Symbol("H")), ref_slab.atoms.species) == 32
         @test count(==(Symbol("O")), ref_slab.atoms.species) == 16
-        
+
         # Test 3: Molecular Centroids Reference
-        ref_centroids = sort([round.(m.centroid_cart, digits=4) for m in ref_mols], by=x->x[3])
+        ref_centroids = sort(
+            [round.(m.centroid_cart, digits=4) for m in ref_mols], by=x->x[3]
+        )
         expected_centroids = [
             [-4.6281, -9.3872, 10.0501],
             [-11.4318, -0.4829, 13.7004],
             [-10.3761, -7.2278, 13.8006],
-            [-5.6838, 0.6297, 15.6328]
+            [-5.6838, 0.6297, 15.6328],
         ]
         expected_centroids_sorted = sort(expected_centroids, by=x->x[3])
         for (c_calc, c_exp) in zip(ref_centroids, expected_centroids_sorted)
             @test isapprox(c_calc, c_exp, atol=1e-3)
         end
-        
+
         # Test 4: Cell Vector Lengths Reference (a, b, c)
         a_len = norm(ref_slab.box.a)
         b_len = norm(ref_slab.box.b)
@@ -228,15 +250,15 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test isapprox(a_len, 11.496000, atol=1e-4)
         @test isapprox(b_len, 13.912005, atol=1e-4)
         @test isapprox(c_len, 25.682860, atol=1e-4)
-        
+
         # Test 5: Cell Angles Reference (alpha, beta, gamma)
         alpha_deg = ref_slab.box.α * (180.0 / pi)
-        beta_deg  = ref_slab.box.β * (180.0 / pi)
+        beta_deg = ref_slab.box.β * (180.0 / pi)
         gamma_deg = ref_slab.box.γ * (180.0 / pi)
         @test isapprox(alpha_deg, 90.0, atol=1e-4)
         @test isapprox(beta_deg, 90.0, atol=1e-4)
         @test isapprox(gamma_deg, 70.849289, atol=1e-4)
-        
+
         # Test 6: Slab Height Span & Vacuum Padding Reference
         c_cart = Cart(ref_slab.atoms.coords, ref_slab.box).x
         min_z = minimum(c_cart[3, :])
@@ -251,7 +273,9 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         box_test = Box([10.0 0.0 0.0; 0.0 10.0 0.0; 0.0 0.0 10.0])
         coords_frac = Frac(Cart([0.0 0.0; 0.0 0.0; 0.0 0.0]), box_test)
         atoms_test = Atoms([:C, :H], coords_frac)
-        no_chg_xtal = Crystal("no_chg", box_test, atoms_test, Charges([0.0, 0.0], coords_frac))
+        no_chg_xtal = Crystal(
+            "no_chg", box_test, atoms_test, Charges([0.0, 0.0], coords_frac)
+        )
 
         @test_throws ArgumentError make_slab(xtal, (0, 0, 0))
         @test_throws ArgumentError make_slab(xtal, (1, 0, 0); vacuum=-5.0)
@@ -261,5 +285,4 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test_throws ArgumentError make_slab(xtal, (1, 0, 0); layers=0)
         @test_throws ArgumentError dipole_moment(no_chg_xtal) # Zero/unassigned charges exception
     end
-
 end

@@ -97,5 +97,5 @@ DEFAULT_COVALENT_RADII = Dict{Symbol, Float64}(
     :Np => 1.9,
     :Pu => 1.87,
     :Am => 1.8,
-    :Cm => 1.69
+    :Cm => 1.69,
 )

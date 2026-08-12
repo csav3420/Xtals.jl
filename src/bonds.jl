@@ -18,9 +18,7 @@ struct BondingRule
 end
 
 function BondingRule(
-    species_i::AbstractString,
-    species_j::AbstractString,
-    max_dist::AbstractString
+    species_i::AbstractString, species_j::AbstractString, max_dist::AbstractString
 )
     return BondingRule(Symbol.([species_i, species_j])..., parse(Float64, max_dist))
 end
@@ -41,8 +39,7 @@ Returns a set of bonding rules based on the given Cordero parameters and toleran
   - `bondingrules::Array{BondingRule, 1}`: Bonding rules from the specified covalent radii.`
 """
 function bondingrules(;
-    covalent_radii::Dict{Symbol, Float64}=rc[:covalent_radii],
-    pad::Float64=0.0
+    covalent_radii::Dict{Symbol, Float64}=rc[:covalent_radii], pad::Float64=0.0
 )::Array{BondingRule}
     bond_rules = BondingRule[]
     # loop over parameterized atoms
@@ -71,8 +68,7 @@ Writes bonding rules to a CSV file that can be loaded with [`read_bonding_rules`
   - `bonding_rules::Array{BondingRule}` : (Optional) The rules to write to file. If not specified, the global rules are written.
 """
 function write_bonding_rules(
-    filename::AbstractString,
-    bonding_rules::Array{BondingRule}=rc[:bonding_rules]
+    filename::AbstractString, bonding_rules::Array{BondingRule}=rc[:bonding_rules]
 )
     open(filename, "w") do f
         for r in bonding_rules
@@ -146,10 +142,7 @@ Checks to see if atoms `i` and `j` in `crystal` are bonded according to the `bon
   - `r::Float64`: the distance between atomic centers.
 """
 function is_bonded(
-    atoms::Atoms{Cart},
-    i::Int64,
-    j::Int64,
-    bonding_rules::Array{BondingRule, 1}
+    atoms::Atoms{Cart}, i::Int64, j::Int64, bonding_rules::Array{BondingRule, 1}
 )
     species_i = atoms.species[i]
     species_j = atoms.species[j]
@@ -167,10 +160,7 @@ end
     bonded = loop_over_bonding_rules(bonding_rules, species_i, species_j, r)
 """
 function loop_over_bonding_rules(
-    bonding_rules::Vector{BondingRule},
-    species_i::Symbol,
-    species_j::Symbol,
-    r::Float64
+    bonding_rules::Vector{BondingRule}, species_i::Symbol, species_j::Symbol, r::Float64
 )
     # loop over possible bonding rules
     for br in bonding_rules
@@ -179,13 +169,13 @@ function loop_over_bonding_rules(
         if br.species_i == :* && br.species_j == :*
             species_match = true
         elseif br.species_i == :* &&
-               (species_i == br.species_j || species_j == br.species_j)
+            (species_i == br.species_j || species_j == br.species_j)
             species_match = true
         elseif br.species_j == :* &&
-               (species_i == br.species_i || species_j == br.species_j)
+            (species_i == br.species_i || species_j == br.species_j)
             species_match = true
         elseif (species_i == br.species_i && species_j == br.species_j) ||
-               (species_j == br.species_i && species_i == br.species_j)
+            (species_j == br.species_i && species_i == br.species_j)
             species_match = true
         end
         if species_match
@@ -231,7 +221,7 @@ function is_bonded(
     i::Int64,
     j::Int64,
     bonding_rules::Array{BondingRule, 1};
-    include_bonds_across_periodic_boundaries::Bool=true
+    include_bonds_across_periodic_boundaries::Bool=true,
 )
     species_i = crystal.atoms.species[i]
     species_j = crystal.atoms.species[j]
@@ -268,7 +258,7 @@ function remove_bonds!(crystal::Crystal)
         rem_edge!(
             crystal.bonds,
             collect(edges(crystal.bonds))[1].src,
-            collect(edges(crystal.bonds))[1].dst
+            collect(edges(crystal.bonds))[1].dst,
         )
     end
     return clear_vectors!(crystal)
@@ -324,7 +314,7 @@ function infer_bonds!(
     include_bonds_across_periodic_boundaries::Bool;
     bonding_rules::Array{BondingRule, 1}=rc[:bonding_rules],
     calculate_vectors::Bool=false,
-    sanity_check::Bool=true
+    sanity_check::Bool=true,
 )
     @assert ne(crystal.bonds) == 0 @sprintf(
         "The crystal %s already has bonds. Remove them with the `remove_bonds!` function before inferring new ones.",
@@ -339,7 +329,7 @@ function infer_bonds!(
                 i,
                 j,
                 bonding_rules;
-                include_bonds_across_periodic_boundaries=include_bonds_across_periodic_boundaries
+                include_bonds_across_periodic_boundaries=include_bonds_across_periodic_boundaries,
             )
             if bonding_flag
                 add_edge!(crystal.bonds, i, j)
@@ -415,7 +405,7 @@ function write_bond_information(
     filename::AbstractString;
     verbose::Bool=false,
     center_at_origin::Bool=false,
-    bond_filter::Pair{Symbol, F}=(:NOTHING => x -> ())
+    bond_filter::Pair{Symbol, F}=(:NOTHING => x -> ()),
 ) where {F <: Function}
     if ne(crystal.bonds) == 0
         @warn(
@@ -494,11 +484,7 @@ function calc_missing_bond_distances!(xtal::Crystal)
             i = src(bond)
             j = dst(bond)
             set_prop!(
-                xtal.bonds,
-                i,
-                j,
-                :distance,
-                distance(xtal.atoms, xtal.box, i, j, true)
+                xtal.bonds, i, j, :distance, distance(xtal.atoms, xtal.box, i, j, true)
             )
         end
     end
@@ -542,15 +528,15 @@ function calculate_bond_vectors!(xtal::Crystal)
     if ne(xtal.bonds) == 0
         # no bonds--but could be legit property of xtal. non-fatal error
         @error "Crystal $(xtal.name) has no bonds."
-        return
+        return nothing
     end
     # check that vectors have not already been calculated
     if has_prop(xtal.bonds, :has_vectors) && get_prop(xtal.bonds, :has_vectors)
         # loop will skip all bonds if vectors already set. fatal error.
         error(
-            "Crystal $(xtal.name) already has vectors. Clear them with `clear_vectors!` first."
+            "Crystal $(xtal.name) already has vectors. Clear them with `clear_vectors!` first.",
         )
-        return
+        return nothing
     end
     # get bonds as directed graph (matters for vectors!)
     bonds = DiGraph(adjacency_matrix(xtal.bonds))

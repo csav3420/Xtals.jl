@@ -23,7 +23,9 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test isempty(overlap_pairs)
 
         # Molecular adsorbate deposition (1 aspirin molecule = 21 atoms)
-        ads_mol_slab = make_adsorbate_slab(aspirin_slab, aspirin_xtal; coverage=(1, 1), n_trials=5)
+        ads_mol_slab = make_adsorbate_slab(
+            aspirin_slab, aspirin_xtal; coverage=(1, 1), n_trials=5
+        )
         @test ads_mol_slab.atoms.n == n_slab_atoms + 21
         overlap_flag_mol, _ = overlap(ads_mol_slab, false)
         @test !overlap_flag_mol
@@ -38,11 +40,15 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test ads_grid_slab.atoms.n == n_slab_atoms + 4
 
         # 2 discrete layers
-        ads_2layer_slab = make_adsorbate_slab(aspirin_slab, :H; coverage=(1, 1), n_layers=2, n_trials=10)
+        ads_2layer_slab = make_adsorbate_slab(
+            aspirin_slab, :H; coverage=(1, 1), n_layers=2, n_trials=10
+        )
         @test ads_2layer_slab.atoms.n == n_slab_atoms + 2
 
         # Film height target (layer_height = 10.0 Å)
-        ads_10a_slab = make_adsorbate_slab(aspirin_slab, :O; coverage=(1, 1), layer_height=10.0, n_trials=10)
+        ads_10a_slab = make_adsorbate_slab(
+            aspirin_slab, :O; coverage=(1, 1), layer_height=10.0, n_trials=10
+        )
         @test ads_10a_slab.atoms.n > n_slab_atoms + 1
         @test ads_10a_slab.box.f_to_c[3, 3] > aspirin_slab.box.f_to_c[3, 3]
     end
@@ -51,10 +57,14 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     # 3. SELECTION MODES & IN-PLACE ALIAS
     # =========================================================================================
     @testset "Candidate Selection Modes & Aliases" begin
-        ads_energy_slab = make_adsorbate_slab(aspirin_slab, :O; selector=:energy, n_trials=10)
+        ads_energy_slab = make_adsorbate_slab(
+            aspirin_slab, :O; selector=:energy, n_trials=10
+        )
         @test ads_energy_slab.atoms.n == n_slab_atoms + 1
 
-        ads_contact_slab = make_adsorbate_slab(aspirin_slab, :O; selector=:contact, n_trials=10)
+        ads_contact_slab = make_adsorbate_slab(
+            aspirin_slab, :O; selector=:contact, n_trials=10
+        )
         @test ads_contact_slab.atoms.n == n_slab_atoms + 1
 
         # Alias add_adsorbate!

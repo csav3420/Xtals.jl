@@ -1,6 +1,13 @@
 # AtomsBase interface things
 import Base: position, length, getindex, keys, display, show, print, println
-import AtomsBase: velocity, cell_vectors, atomic_symbol, atomic_number, periodicity, species, chemical_formula
+import AtomsBase:
+    velocity,
+    cell_vectors,
+    atomic_symbol,
+    atomic_number,
+    periodicity,
+    species,
+    chemical_formula
 
 """
     SymmetryInfo(symmetry, space_group, is_p1)
@@ -101,12 +108,13 @@ function Crystal(
     species_col::Array{String, 1}=["_atom_site_type_symbol", "_atom_site_label"],
     infer_bonds::Bool=false,
     periodic_boundaries::Union{Bool, Missing}=missing,
-    absolute_path::Bool=false
+    absolute_path::Bool=false,
 )
-    # Read file extension. Ensure we can read the file type
-    extension = split(filename, ".")[end]
+    # Read file extension. Delegate to Chemfiles if not CIF or CSSR
+    extension = lowercase(split(filename, ".")[end])
     if !(extension in ["cif", "cssr"])
-        error("I can only read .cif or .cssr crystal structure files.")
+        file_path = absolute_path ? filename : joinpath(rc[:paths][:crystals], filename)
+        return read_crystal_chemfiles(file_path)
     end
 
     # get file path via global default dir unless flag specified
@@ -161,8 +169,8 @@ function Crystal(
 
             # Make sure the space group is P1
             if line[1] == "_symmetry_space_group_name_H-M" ||
-               line[1] == "_space_group_name_Hall" ||
-               line[1] == "_space_group_name_H-M_alt"
+                line[1] == "_space_group_name_Hall" ||
+                line[1] == "_space_group_name_H-M_alt"
                 # use anonymous function to combine all terms past the first
                 #   to extract space group name
                 space_group = reduce((x, y) -> x * " " * y, line[2:end])
@@ -208,7 +216,7 @@ function Crystal(
 
                 # Assign species_column by matching to priority list
                 if haskey(name_to_column, "_atom_site_Cartn_x") ||
-                   haskey(name_to_column, "_atom_site_fract_x") # to have entered _atom_site loop
+                    haskey(name_to_column, "_atom_site_fract_x") # to have entered _atom_site loop
                     found_species_col = false
                     for col in species_col
                         if col ∈ keys(name_to_column)
@@ -242,7 +250,9 @@ function Crystal(
                             i += 1
                             continue
                         end
-                        if sline[1] == '_' || startswith(sline, "loop_") || startswith(sline, "data_")
+                        if sline[1] == '_' ||
+                            startswith(sline, "loop_") ||
+                            startswith(sline, "data_")
                             break
                         end
                         line = lines[i]
@@ -283,7 +293,9 @@ function Crystal(
                             i += 1
                             continue
                         end
-                        if sline[1] == '_' || startswith(sline, "loop_") || startswith(sline, "data_")
+                        if sline[1] == '_' ||
+                            startswith(sline, "loop_") ||
+                            startswith(sline, "data_")
                             break
                         end
                         line = split(sline)
@@ -291,44 +303,58 @@ function Crystal(
                             break
                         end
 
-                        raw_species = strip(line[name_to_column[species_column]], ['\'', '"'])
+                        raw_species = strip(
+                            line[name_to_column[species_column]], ['\'', '"']
+                        )
                         push!(species, Symbol(raw_species))
-                        coords = [coords [
-                            mod(
-                                parse(
-                                    Float64,
-                                    split(line[name_to_column["_atom_site_fract_x"]], '(')[1]
+                        coords = [
+                            coords [
+                                mod(
+                                    parse(
+                                        Float64,
+                                        split(
+                                            line[name_to_column["_atom_site_fract_x"]],
+                                            '(',
+                                        )[1],
+                                    ),
+                                    1.0,
                                 ),
-                                1.0
-                            ),
-                            mod(
-                                parse(
-                                    Float64,
-                                    split(line[name_to_column["_atom_site_fract_y"]], '(')[1]
+                                mod(
+                                    parse(
+                                        Float64,
+                                        split(
+                                            line[name_to_column["_atom_site_fract_y"]],
+                                            '(',
+                                        )[1],
+                                    ),
+                                    1.0,
                                 ),
-                                1.0
-                            ),
-                            mod(
-                                parse(
-                                    Float64,
-                                    split(line[name_to_column["_atom_site_fract_z"]], '(')[1]
+                                mod(
+                                    parse(
+                                        Float64,
+                                        split(
+                                            line[name_to_column["_atom_site_fract_z"]],
+                                            '(',
+                                        )[1],
+                                    ),
+                                    1.0,
                                 ),
-                                1.0
-                            )
-                        ]]
+                            ]
+                        ]
                         # If charges present, import them
                         if haskey(name_to_column, "_atom_site_charge")
                             push!(
                                 charge_values,
-                                parse(Float64, line[name_to_column["_atom_site_charge"]])
+                                parse(Float64, line[name_to_column["_atom_site_charge"]]),
                             )
                         else
                             push!(charge_values, NaN)
                         end
                         # add to label_num_to_idx so that bonds can be converted later
                         if read_bonds_from_file
-                            label_num_to_idx[line[name_to_column[species_column]]] =
-                                length(species)
+                            label_num_to_idx[line[name_to_column[species_column]]] = length(
+                                species
+                            )
                         end
                         # iterate to next line in file
                         i += 1
@@ -352,7 +378,9 @@ function Crystal(
                             i += 1
                             continue
                         end
-                        if sline[1] == '_' || startswith(sline, "loop_") || startswith(sline, "data_")
+                        if sline[1] == '_' ||
+                            startswith(sline, "loop_") ||
+                            startswith(sline, "data_")
                             break
                         end
                         line = split(sline)
@@ -360,35 +388,40 @@ function Crystal(
                             break
                         end
 
-                        raw_species = strip(line[name_to_column[species_column]], ['\'', '"'])
+                        raw_species = strip(
+                            line[name_to_column[species_column]], ['\'', '"']
+                        )
                         push!(species, Symbol(raw_species))
-                        coords = [coords [
-                            parse(
-                                Float64,
-                                split(line[name_to_column["_atom_site_Cartn_x"]], '(')[1]
-                            ),
-                            parse(
-                                Float64,
-                                split(line[name_to_column["_atom_site_Cartn_y"]], '(')[1]
-                            ),
-                            parse(
-                                Float64,
-                                split(line[name_to_column["_atom_site_Cartn_z"]], '(')[1]
-                            )
-                        ]]
+                        coords = [
+                            coords [
+                                parse(
+                                    Float64,
+                                    split(line[name_to_column["_atom_site_Cartn_x"]], '(')[1],
+                                ),
+                                parse(
+                                    Float64,
+                                    split(line[name_to_column["_atom_site_Cartn_y"]], '(')[1],
+                                ),
+                                parse(
+                                    Float64,
+                                    split(line[name_to_column["_atom_site_Cartn_z"]], '(')[1],
+                                ),
+                            ]
+                        ]
                         # If charges present, import them
                         if haskey(name_to_column, "_atom_site_charge")
                             push!(
                                 charge_values,
-                                parse(Float64, line[name_to_column["_atom_site_charge"]])
+                                parse(Float64, line[name_to_column["_atom_site_charge"]]),
                             )
                         else
                             push!(charge_values, NaN)
                         end
                         # add to label_num_to_idx so that bonds can be converted later
                         if read_bonds_from_file
-                            label_num_to_idx[line[name_to_column[species_column]]] =
-                                length(species)
+                            label_num_to_idx[line[name_to_column[species_column]]] = length(
+                                species
+                            )
                         end
                         # iterate to next line in file
                         i += 1
@@ -403,8 +436,8 @@ function Crystal(
                     # BOND READER
                     # =====================
                 elseif read_bonds_from_file &&
-                       haskey(name_to_column, "_geom_bond_atom_site_label_1") &&
-                       haskey(name_to_column, "_geom_bond_atom_site_label_2")
+                    haskey(name_to_column, "_geom_bond_atom_site_label_1") &&
+                    haskey(name_to_column, "_geom_bond_atom_site_label_2")
                     max_col = maximum(values(name_to_column))
                     while i <= length(lines)
                         sline = strip(lines[i])
@@ -412,7 +445,9 @@ function Crystal(
                             i += 1
                             continue
                         end
-                        if sline[1] == '_' || startswith(sline, "loop_") || startswith(sline, "data_")
+                        if sline[1] == '_' ||
+                            startswith(sline, "loop_") ||
+                            startswith(sline, "data_")
                             break
                         end
                         line = split(sline)
@@ -420,16 +455,14 @@ function Crystal(
                             break
                         end
 
-                        atom_one_idx =
-                            label_num_to_idx[line[name_to_column["_geom_bond_atom_site_label_1"]]]
-                        atom_two_idx =
-                            label_num_to_idx[line[name_to_column["_geom_bond_atom_site_label_2"]]]
+                        atom_one_idx = label_num_to_idx[line[name_to_column["_geom_bond_atom_site_label_1"]]]
+                        atom_two_idx = label_num_to_idx[line[name_to_column["_geom_bond_atom_site_label_2"]]]
                         add_edge!(
                             bonds,
                             atom_one_idx,
                             atom_two_idx,
                             :distance,
-                            distance(coords, box, atom_one_idx, atom_two_idx, true)
+                            distance(coords, box, atom_one_idx, atom_two_idx, true),
                         )
                         # iterate to next line in file
                         i += 1
@@ -609,10 +642,7 @@ Returns a copy of a crystal with the name changed.
 function rename_xtal(xtal::Crystal, name::AbstractString)::Crystal
     # make a "nothing" crystal
     nothing_xtal = Crystal(
-        "nothing",
-        xtal.box,
-        Atoms(0, Symbol[], Frac(zeros(3, 0))),
-        Charges{Frac}(0)
+        "nothing", xtal.box, Atoms(0, Symbol[], Frac(zeros(3, 0))), Charges{Frac}(0)
     )
     # add the "nothing" crystal to the input crystal and change the name
     return +(xtal, nothing_xtal; name=name)
@@ -700,7 +730,7 @@ function write_xyz(
     crystal::Crystal,
     filename::AbstractString=xyz_filename(crystal);
     center_at_origin::Bool=false,
-    kwargs...
+    kwargs...,
 )
     atoms = Atoms(crystal.atoms.species, Cart(crystal.atoms.coords, crystal.box)) # put in Cartesian
     if center_at_origin
@@ -929,7 +959,7 @@ function write_cif(
     crystal::Crystal,
     filename::AbstractString;
     fractional_coords::Bool=true,
-    number_atoms::Bool=true
+    number_atoms::Bool=true,
 )
     if has_charges(crystal)
         if crystal.atoms.n != crystal.charges.n
@@ -989,13 +1019,11 @@ function write_cif(
         @printf(cif_file, "loop_\n_atom_site_label\n_atom_site_type_symbol\n")
         if fractional_coords
             @printf(
-                cif_file,
-                "_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n"
+                cif_file, "_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n"
             )
         else
             @printf(
-                cif_file,
-                "_atom_site_Cartn_x\n_atom_site_Cartn_y\n_atom_site_Cartn_z\n"
+                cif_file, "_atom_site_Cartn_x\n_atom_site_Cartn_y\n_atom_site_Cartn_z\n"
             )
         end
         high_precision_charges = false # if, for neutrality, need high-precision charges
@@ -1003,7 +1031,7 @@ function write_cif(
             @printf(cif_file, "_atom_site_charge\n")
             # if crystal will not be charge neutral to a 1e-5 tolerance when loading it
             #    into PorousMaterials.jl, then write higher-precision charges
-            if abs(sum(round.(crystal.charges.q, digits=6))) > NET_CHARGE_TOL
+            if abs(sum(round.(crystal.charges.q; digits=6))) > NET_CHARGE_TOL
                 @info "writing high-precision charges for " * filename * ".\n"
                 high_precision_charges = true
             end
@@ -1016,7 +1044,7 @@ function write_cif(
                 cif_file,
                 "%s    %s    ",
                 string(crystal.atoms.species[i]) *
-                (number_atoms ? string(label_numbers[crystal.atoms.species[i]]) : ""),
+                    (number_atoms ? string(label_numbers[crystal.atoms.species[i]]) : ""),
                 crystal.atoms.species[i]
             )
             # store label for this atom idx
@@ -1145,23 +1173,17 @@ Remove duplicate atoms and charges from a crystal. See [`remove_duplicates`](@re
   - `crystal::Crystal`: crystal with duplicate atoms and charges removed.
 """
 function remove_duplicate_atoms_and_charges(
-    crystal::Crystal,
-    r_tol::Float64=0.1,
-    q_tol::Float64=0.0001
+    crystal::Crystal, r_tol::Float64=0.1, q_tol::Float64=0.0001
 )
     if ne(crystal.bonds) != 0
         error("cannot remove duplicates with bonds assigned")
     end
     atoms = remove_duplicates(crystal.atoms, crystal.box, true; r_tol=r_tol, q_tol=q_tol)
-    charges =
-        remove_duplicates(crystal.charges, crystal.box, true; r_tol=r_tol, q_tol=q_tol)
+    charges = remove_duplicates(
+        crystal.charges, crystal.box, true; r_tol=r_tol, q_tol=q_tol
+    )
     return Crystal(
-        crystal.name,
-        crystal.box,
-        atoms,
-        charges,
-        MetaGraph(atoms.n),
-        crystal.symmetry
+        crystal.name, crystal.box, atoms, charges, MetaGraph(atoms.n), crystal.symmetry
     )
 end
 
@@ -1195,9 +1217,7 @@ crystal_with_charges = assign_charges(crystal, species_to_charge) # tol 1e-5 def
     the resulting crystal
 """
 function assign_charges(
-    crystal::Crystal,
-    species_to_charge::Dict{Symbol, Float64},
-    net_charge_tol::Float64=1e-5
+    crystal::Crystal, species_to_charge::Dict{Symbol, Float64}, net_charge_tol::Float64=1e-5
 )
     if crystal.charges.n != 0
         @warn @sprintf(
@@ -1211,12 +1231,7 @@ crystal and adding new ones...\n",
     charges = Charges(q, crystal.atoms.coords)
 
     new_crystal = Crystal(
-        crystal.name,
-        crystal.box,
-        crystal.atoms,
-        charges,
-        crystal.bonds,
-        crystal.symmetry
+        crystal.name, crystal.box, crystal.atoms, charges, crystal.bonds, crystal.symmetry
     )
 
     # check for charge neutrality
@@ -1236,7 +1251,7 @@ crystal and adding new ones...\n",
 end
 
 function Base.show(io::IO, mime::MIME"text/plain", system::Crystal)
-    print(io, system)
+    return print(io, system)
 end
 
 print(xtal::Crystal) = show(xtal)
@@ -1245,12 +1260,12 @@ print(io::IO, xtal::Crystal) = show(io, xtal)
 
 function println(xtal::Crystal)
     println("")
-    show(xtal)
+    return show(xtal)
 end
 
 function println(io::IO, xtal::Crystal)
     println(io, "")
-    show(io, xtal)
+    return show(io, xtal)
 end
 
 display(xtal::Crystal) = show(xtal)
@@ -1310,7 +1325,7 @@ function Base.getindex(crystal::Crystal, ids::Union{Array{Int, 1}, UnitRange{Int
                 bonds,
                 old_to_new[edge.src],
                 old_to_new[edge.dst],
-                props(crystal.bonds, edge.src, edge.dst)
+                props(crystal.bonds, edge.src, edge.dst),
             )
         end
     end
@@ -1321,21 +1336,21 @@ function Base.getindex(crystal::Crystal, ids::Union{Array{Int, 1}, UnitRange{Int
             crystal.atoms[ids],
             crystal.charges,
             bonds,
-            crystal.symmetry
+            crystal.symmetry,
         )
     elseif (crystal.charges.n == crystal.atoms.n) &&
-           isapprox(crystal.charges.coords, crystal.atoms.coords)
+        isapprox(crystal.charges.coords, crystal.atoms.coords)
         return Crystal(
             crystal.name,
             crystal.box,
             crystal.atoms[ids],
             crystal.charges[ids],
             bonds,
-            crystal.symmetry
+            crystal.symmetry,
         )
     else
         error(
-            "for getindex(crystal), crystal must have 0 charges or an equal number of charges and atoms that share coordinates"
+            "for getindex(crystal), crystal must have 0 charges or an equal number of charges and atoms that share coordinates",
         )
     end
     return crystal
@@ -1351,15 +1366,13 @@ function Base.lastindex(crystal::Crystal)
         return crystal.atoms.n
     else
         error(
-            "to index the crystal, it must have 0 charges or an equal number of charges and atoms"
+            "to index the crystal, it must have 0 charges or an equal number of charges and atoms",
         )
     end
 end
 
 function Base.:+(
-    crystals::Crystal...;
-    check_overlap::Bool=true,
-    name::AbstractString="added_xtal"
+    crystals::Crystal...; check_overlap::Bool=true, name::AbstractString="added_xtal"
 )
     box = crystals[1].box
     symmetry = crystals[1].symmetry

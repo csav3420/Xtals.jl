@@ -48,7 +48,7 @@ include("bond_vectors.jl")
         "CH5",
         box,
         Atoms(texas_carbon.n, texas_carbon.species, Frac(texas_carbon.coords, box)),
-        Charges{Frac}(0)
+        Charges{Frac}(0),
     )
 
     @test !bond_sanity_check(xtal)[1]
@@ -62,7 +62,7 @@ include("bond_vectors.jl")
         "H3",
         box,
         Atoms(trihydrogen.n, trihydrogen.species, Frac(trihydrogen.coords, box)),
-        Charges{Frac}(0)
+        Charges{Frac}(0),
     )
     infer_bonds!(xtal, false)
 
@@ -78,7 +78,7 @@ end
         BondingRule(:H, :*, 1.2),
         BondingRule(:Ni, :O, 2.5),
         BondingRule(:Ni, :N, 2.5),
-        BondingRule(:*, :*, 1.9)
+        BondingRule(:*, :*, 1.9),
     ]
     infer_bonds!(c, true; bonding_rules=bonding_rules)
     c1 = deepcopy(c)
@@ -188,9 +188,7 @@ end
     capture() do
         write_bond_information(xtal, all_bonds_temppath)
         return write_bond_information(
-            xtal,
-            no_pb_temppath;
-            bond_filter=:cross_boundary => p -> !p
+            xtal, no_pb_temppath; bond_filter=:cross_boundary => p -> !p
         )
     end
 

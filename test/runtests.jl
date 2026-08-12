@@ -9,8 +9,9 @@ testfiles = [
     "paths.jl",
     "slab.jl",
     "adsorbate.jl",
+    "chemfiles_io.jl",
     "aqua.jl",
-    "benchmarks.jl"
+    "benchmarks.jl",
 ]
 
 @assert (VERSION.major == 1) && (VERSION.minor ≥ 6) "Minimum Julia version not met."

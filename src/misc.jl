@@ -53,9 +53,7 @@ write atoms to an .xyz file.
   - `center_at_origin::Bool`: (for crystal only) if `true`, translate all coords such that the origin is the center of the unit cell.
 """
 function write_xyz(
-    atoms::Atoms{Cart},
-    filename::AbstractString;
-    comment::AbstractString="# $filename"
+    atoms::Atoms{Cart}, filename::AbstractString; comment::AbstractString="# $filename"
 )
     filename = add_extension(filename, ".xyz")
 
@@ -133,8 +131,7 @@ Write a `Crystal` to disk in the mol2 format.  Includes atoms, bonds, and unit c
   - `filename::AbstractString` : (Optional) the name of the file to save to.  By default, file is named automatically from `xtal.name`
 """
 function write_mol2(
-    xtal::Crystal;
-    filename::AbstractString=split(xtal.name, ".cif")[1] * ".mol2"
+    xtal::Crystal; filename::AbstractString=split(xtal.name, ".cif")[1] * ".mol2"
 )
     # open buffer
     open(filename, "w") do f
@@ -185,9 +182,7 @@ Warnings are issued if any chosen paths are not valid folders.
   - `no_warn::Bool` : Optional.  Set `true` to suppress invalid path warnings.  Default to `false`.
 """
 function set_paths(
-    path_to_data::AbstractString=pwd();
-    print_paths::Bool=false,
-    no_warn::Bool=false
+    path_to_data::AbstractString=pwd(); print_paths::Bool=false, no_warn::Bool=false
 )
     for (key, path) in rc[:paths] # set all relative paths
         rc[:paths][key] = joinpath(path_to_data, String(key))

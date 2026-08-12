@@ -203,7 +203,7 @@ function remove_duplicates(
     box::Box,
     apply_pbc::Bool;
     r_tol::Float64=0.1,
-    q_tol::Float64=0.0001
+    q_tol::Float64=0.0001,
 )
     ids_keep = trues(ac.n)
     for i in 1:(ac.n)

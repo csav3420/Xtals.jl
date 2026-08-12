@@ -31,8 +31,8 @@ import IOCapture.capture
 
     atoms, bonds, bond_types = read_mol("data/example.mol")
     @test (atoms.species[1] == :O) &&
-          (atoms.species[end] == :H) & (length(atoms.species) == 31) &&
-          (atoms.n == 31)
+        (atoms.species[end] == :H) & (length(atoms.species) == 31) &&
+        (atoms.n == 31)
     @test ne(bonds) == 32
     @test nv(bonds) == 31
     @test (bond_types[1] == 1) && (bond_types[3] == 2)

@@ -45,7 +45,9 @@ Given Miller indices (h, k, l), the surface plane equation in direct space is:
 3. **Determinant Orientation**:
    If det(M) < 0, m1 is inverted to enforce a right-handed system (det(M) = 1).
 """
-function surface_basis(hkl::Tuple{Int, Int, Int}; f_to_c::Union{Nothing, Matrix{Float64}}=nothing)
+function surface_basis(
+    hkl::Tuple{Int, Int, Int}; f_to_c::Union{Nothing, Matrix{Float64}}=nothing
+)
     h, k, l = hkl
     # Step 1: Guard against invalid (0, 0, 0) Miller indices
     if h == 0 && k == 0 && l == 0
@@ -71,9 +73,9 @@ function surface_basis(hkl::Tuple{Int, Int, Int}; f_to_c::Union{Nothing, Matrix{
 
     # Sort by real-space Cartesian length if f_to_c provided, else integer norm
     if f_to_c !== nothing
-        sort!(in_plane, by=m -> norm(f_to_c * m))
+        sort!(in_plane; by=m -> norm(f_to_c * m))
     else
-        sort!(in_plane, by=m -> norm(m))
+        sort!(in_plane; by=m -> norm(m))
     end
 
     # Step 4: Find shortest primitive vectors m1, m2, m3 such that det([m1 m2 m3]) == 1
@@ -100,7 +102,7 @@ function surface_basis(hkl::Tuple{Int, Int, Int}; f_to_c::Union{Nothing, Matrix{
     end
 
     if !isempty(candidates)
-        sort!(candidates, by=x -> x[1])
+        sort!(candidates; by=x -> x[1])
         m2 = candidates[1][2]
         m3 = candidates[1][3]
     else
@@ -221,7 +223,8 @@ function detect_molecules(crystal::Crystal)
                         diff_cart = coords_cart[:, nbr] - coords_cart[:, curr]
                         diff_frac = c_to_f * diff_cart
                         diff_frac .-= round.(diff_frac) # nearest image
-                        unwrapped_cart[:, nbr_local] = unwrapped_cart[:, curr_local] + f_to_c * diff_frac
+                        unwrapped_cart[:, nbr_local] =
+                            unwrapped_cart[:, curr_local] + f_to_c * diff_frac
                         push!(queue, nbr)
                     end
                 end
@@ -229,7 +232,7 @@ function detect_molecules(crystal::Crystal)
         end
 
         # Step 4: Compute 3D Cartesian centroid c = (1/N_m) * sum(r_unwrap)
-        centroid = vec(sum(unwrapped_cart, dims=2) ./ n_m)
+        centroid = vec(sum(unwrapped_cart; dims=2) ./ n_m)
         relative_cart = unwrapped_cart .- centroid
 
         # Step 5: Extract local intra-molecular bond edges (u, v) for slab graph reconstruction
@@ -243,7 +246,10 @@ function detect_molecules(crystal::Crystal)
             end
         end
 
-        push!(molecules, MoleculeData(comp, m_species, relative_cart, m_charges, centroid, edges))
+        push!(
+            molecules,
+            MoleculeData(comp, m_species, relative_cart, m_charges, centroid, edges),
+        )
     end
 
     return molecules
@@ -270,19 +276,22 @@ within distance tolerance `tol` (direct 3D translational equivalence).
 function _parse_terminations(
     termination::Union{Int, Tuple{Int, Int}},
     termination_bottom::Union{Nothing, Int},
-    termination_top::Union{Nothing, Int}
+    termination_top::Union{Nothing, Int},
 )
-    t_bot = termination_bottom !== nothing ? termination_bottom : (termination isa Tuple ? termination[1] : termination)
-    t_top = termination_top !== nothing ? termination_top : (termination isa Tuple ? termination[2] : termination)
+    t_bot = if termination_bottom !== nothing
+        termination_bottom
+    else
+        (termination isa Tuple ? termination[1] : termination)
+    end
+    t_top = if termination_top !== nothing
+        termination_top
+    else
+        (termination isa Tuple ? termination[2] : termination)
+    end
     return t_bot, t_top
 end
 
-function are_terminations_equivalent(
-    geom,
-    z1::Float64,
-    z2::Float64;
-    tol::Float64=0.2
-)
+function are_terminations_equivalent(geom, z1::Float64, z2::Float64; tol::Float64=0.2)
     h_layer = geom.u3_rot[3]
     n_mols = length(geom.molecules)
 
@@ -301,11 +310,12 @@ function are_terminations_equivalent(
         end
     end
 
-    sort!(profiles1, by=x -> (x[1], x[2]))
-    sort!(profiles2, by=x -> (x[1], x[2]))
+    sort!(profiles1; by=x -> (x[1], x[2]))
+    sort!(profiles2; by=x -> (x[1], x[2]))
 
     for i in 1:length(profiles1)
-        if profiles1[i][2] != profiles2[i][2] || abs(profiles1[i][1] - profiles2[i][1]) > tol
+        if profiles1[i][2] != profiles2[i][2] ||
+            abs(profiles1[i][1] - profiles2[i][1]) > tol
             return false
         end
     end
@@ -313,11 +323,7 @@ function are_terminations_equivalent(
 end
 
 function are_terminations_equivalent(
-    crystal::Crystal,
-    hkl::Tuple{Int, Int, Int},
-    z1::Float64,
-    z2::Float64;
-    tol::Float64=0.2
+    crystal::Crystal, hkl::Tuple{Int, Int, Int}, z1::Float64, z2::Float64; tol::Float64=0.2
 )
     geom = precompute_slab_geometry(crystal, hkl)
     return are_terminations_equivalent(geom, z1, z2; tol=tol)
@@ -336,7 +342,7 @@ function get_terminations(
     hkl::Tuple{Int, Int, Int};
     tol::Float64=0.5,
     unique_only::Bool=false,
-    nonpolar_only::Bool=false
+    nonpolar_only::Bool=false,
 )
     geom = precompute_slab_geometry(crystal, hkl)
     R = geom.R
@@ -395,7 +401,9 @@ function get_terminations(
     if nonpolar_only && has_charges(crystal)
         nonpolar_terms = Float64[]
         for t_val in filtered_terms
-            test_slab = construct_single_slab(crystal, hkl, geom, 1; termination=1, shift=t_val)
+            test_slab = construct_single_slab(
+                crystal, hkl, geom, 1; termination=1, shift=t_val
+            )
             if !is_polar_surface(test_slab)
                 push!(nonpolar_terms, t_val)
             end
@@ -447,14 +455,7 @@ function precompute_slab_geometry(crystal::Crystal, hkl::Tuple{Int, Int, Int})
 
     molecules = detect_molecules(crystal)
 
-    return (
-        M=M,
-        R=R,
-        u1_rot=u1_rot,
-        u2_rot=u2_rot,
-        u3_rot=u3_rot,
-        molecules=molecules
-    )
+    return (M=M, R=R, u1_rot=u1_rot, u2_rot=u2_rot, u3_rot=u3_rot, molecules=molecules)
 end
 
 """
@@ -480,7 +481,7 @@ function construct_single_slab(
     tol::Float64=0.5,
     orthogonalize_z::Bool=true,
     orthogonalize::Bool=false,
-    keep_molecules_whole::Bool=true
+    keep_molecules_whole::Bool=true,
 )
     # Parse bottom and top termination indices
     t_bot, t_top = _parse_terminations(termination, termination_bottom, termination_top)
@@ -602,9 +603,11 @@ function construct_single_slab(
                     continue
                 end
 
-                r_rot_centered = [r_base[1] + rz * geom.u3_rot[1],
-                                  r_base[2] + rz * geom.u3_rot[2],
-                                  z_mod + rz * h_layer + vacuum]
+                r_rot_centered = [
+                    r_base[1] + rz * geom.u3_rot[1],
+                    r_base[2] + rz * geom.u3_rot[2],
+                    z_mod + rz * h_layer + vacuum,
+                ]
                 push!(slab_species, crystal.atoms.species[i])
                 if has_charges(crystal)
                     push!(slab_charges, crystal.charges.q[i])
@@ -615,14 +618,14 @@ function construct_single_slab(
     end
 
     n_atoms_slab = length(slab_species)
-    coords_mat = isempty(slab_coords_cart) ? zeros(Float64, 3, 0) : hcat(slab_coords_cart...)
+    coords_mat =
+        isempty(slab_coords_cart) ? zeros(Float64, 3, 0) : hcat(slab_coords_cart...)
     atoms_slab_cart = Cart(coords_mat)
     atoms_slab_frac = Frac(atoms_slab_cart, slab_box)
     atoms_slab = Atoms(slab_species, atoms_slab_frac)
 
     charges_slab = Charges(
-        isempty(slab_charges) ? zeros(Float64, n_atoms_slab) : slab_charges,
-        atoms_slab_frac
+        isempty(slab_charges) ? zeros(Float64, n_atoms_slab) : slab_charges, atoms_slab_frac
     )
 
     slab_name = "$(crystal.name)_slab_$(hkl[1])$(hkl[2])$(hkl[3])_L$(k_layer)"
@@ -692,7 +695,7 @@ function make_slab(
     tol::Float64=0.5,
     orthogonalize_z::Bool=true,
     orthogonalize::Bool=false,
-    keep_molecules_whole::Bool=true
+    keep_molecules_whole::Bool=true,
 )
     # Step 1: Input validation guard clauses for vacuum, dimensions, and layer counts
     if vacuum < 0.0
@@ -772,7 +775,7 @@ function make_slab(
             tol=tol,
             orthogonalize_z=orthogonalize_z,
             orthogonalize=orthogonalize,
-            keep_molecules_whole=keep_molecules_whole
+            keep_molecules_whole=keep_molecules_whole,
         )
     end
 
@@ -797,7 +800,11 @@ in units of e*Å (or Debye if debye=true, where 1 e*Å = 4.803204 Debye).
 """
 function dipole_moment(crystal::Crystal; debye::Bool=false)
     if !has_charges(crystal) || iszero(crystal.charges.q)
-        throw(ArgumentError("Crystal has no atomic charges assigned. Assign charges before calculating dipole moment."))
+        throw(
+            ArgumentError(
+                "Crystal has no atomic charges assigned. Assign charges before calculating dipole moment.",
+            ),
+        )
     end
     coords = Cart(crystal.atoms.coords, crystal.box).x
     q = crystal.charges.q
@@ -837,7 +844,11 @@ dipole components mu_z for all sub-layers along the (h,k,l) surface normal in th
 """
 function layer_dipoles(crystal::Crystal, hkl::Tuple{Int, Int, Int}; dz_tol::Float64=0.8)
     if !has_charges(crystal) || iszero(crystal.charges.q)
-        throw(ArgumentError("Crystal has no atomic charges assigned. Assign charges before calculating layer dipoles."))
+        throw(
+            ArgumentError(
+                "Crystal has no atomic charges assigned. Assign charges before calculating layer dipoles.",
+            ),
+        )
     end
     geom = precompute_slab_geometry(crystal, hkl)
     coords_cart = Cart(crystal.atoms.coords, crystal.box).x
@@ -860,11 +871,16 @@ function layer_dipoles(crystal::Crystal, hkl::Tuple{Int, Int, Int}; dz_tol::Floa
     end
     push!(clusters, current)
 
-    res = NamedTuple{(:z_avg, :charge, :mu_layer, :mu_z), Tuple{Float64, Float64, Vector{Float64}, Float64}}[]
+    res = NamedTuple{
+        (:z_avg, :charge, :mu_layer, :mu_z),
+        Tuple{Float64, Float64, Vector{Float64}, Float64},
+    }[]
     for cl in clusters
         q_l = sum(charges[idx] for idx in cl)
         z_avg = sum(z_coords[idx] for idx in cl) / length(cl)
-        mu_l = vec(sum(charges[idx] .* (coords_rot[:, idx] .- [0.0, 0.0, z_avg]) for idx in cl))
+        mu_l = vec(
+            sum(charges[idx] .* (coords_rot[:, idx] .- [0.0, 0.0, z_avg]) for idx in cl)
+        )
         push!(res, (z_avg=z_avg, charge=q_l, mu_layer=mu_l, mu_z=mu_l[3]))
     end
 
@@ -879,7 +895,9 @@ Classify a surface plane into Tasker surface categories (Tasker, J. Phys. C, 197
 - `:Type_II`: Charged atomic layers (q_layer != 0 or mu_z != 0), but symmetric layer stacking yields zero net surface dipole (sum mu_z == 0).
 - `:Type_III`: Charged atomic layers with net out-of-plane electric dipole moment per repeat unit (sum mu_z != 0, polar surface).
 """
-function tasker_type(crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=1e-3, dz_tol::Float64=0.8)
+function tasker_type(
+    crystal::Crystal, hkl::Tuple{Int, Int, Int}; tol::Float64=1e-3, dz_tol::Float64=0.8
+)
     if !has_charges(crystal) || iszero(crystal.charges.q)
         slabs = make_slab(crystal, hkl; vacuum=10.0, layers=1)
         return is_polar_surface(slabs[1]; tol=tol) ? :Type_III : :Type_I

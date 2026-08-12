@@ -54,11 +54,21 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         end
     end
 
-    println("\n==========================================================================================")
-    println("             XTALS BENCHMARKTOOLS STATISTICAL TIMELINE TRACKER (Threads: $(num_threads))        ")
-    println("==========================================================================================")
-    println("Operation                               | Med Time(ms) | Memory (MB) | Timeline vs Prev Run")
-    println("------------------------------------------------------------------------------------------")
+    println(
+        "\n==========================================================================================",
+    )
+    println(
+        "             XTALS BENCHMARKTOOLS STATISTICAL TIMELINE TRACKER (Threads: $(num_threads))        ",
+    )
+    println(
+        "==========================================================================================",
+    )
+    println(
+        "Operation                               | Med Time(ms) | Memory (MB) | Timeline vs Prev Run",
+    )
+    println(
+        "------------------------------------------------------------------------------------------",
+    )
 
     function run_and_log_bt(op_name::String, b)
         tune!(b)
@@ -70,7 +80,9 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
 
         # Append to TSV log file with thread count
         open(tsv_file, "a") do io
-            println(io, "$current_ts\t$(VERSION)\t$num_threads\t$op_name\t$time_ms\t$mem_mb")
+            println(
+                io, "$current_ts\t$(VERSION)\t$num_threads\t$op_name\t$time_ms\t$mem_mb"
+            )
         end
 
         change_str = "Initial Run"
@@ -89,14 +101,34 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test time_ms >= 0.0 # Valid time measurement assertion
     end
 
-    run_and_log_bt("surface_basis (2, 1, 2)", @benchmarkable surface_basis((2, 1, 2); f_to_c=$(aspirin.box.f_to_c)))
+    run_and_log_bt(
+        "surface_basis (2, 1, 2)",
+        @benchmarkable surface_basis((2, 1, 2); f_to_c=($(aspirin.box.f_to_c)))
+    )
     run_and_log_bt("detect_molecules (Aspirin)", @benchmarkable detect_molecules($aspirin))
-    run_and_log_bt("get_terminations (0,1,0; unique)", @benchmarkable get_terminations($aspirin, (0, 1, 0); unique_only=true))
-    run_and_log_bt("make_slab (1,1,0; 1 layer)", @benchmarkable make_slab($aspirin, (1, 1, 0); vacuum=10.0, layers=1))
-    run_and_log_bt("make_slab (2,1,2; min_size 50x50 Å)", @benchmarkable make_slab($aspirin, (2, 1, 2); min_size=(50.0, 50.0), vacuum=10.0, layers=1))
-    run_and_log_bt("layer_dipoles (1, 0, 0)", @benchmarkable layer_dipoles($aspirin_chg, (1, 0, 0)))
-    run_and_log_bt("tasker_type (1, 0, 0)", @benchmarkable tasker_type($aspirin_chg, (1, 0, 0)))
+    run_and_log_bt(
+        "get_terminations (0,1,0; unique)",
+        @benchmarkable get_terminations($aspirin, (0, 1, 0); unique_only=true)
+    )
+    run_and_log_bt(
+        "make_slab (1,1,0; 1 layer)",
+        @benchmarkable make_slab($aspirin, (1, 1, 0); vacuum=10.0, layers=1)
+    )
+    run_and_log_bt(
+        "make_slab (2,1,2; min_size 50x50 Å)",
+        @benchmarkable make_slab(
+            $aspirin, (2, 1, 2); min_size=(50.0, 50.0), vacuum=10.0, layers=1
+        )
+    )
+    run_and_log_bt(
+        "layer_dipoles (1, 0, 0)", @benchmarkable layer_dipoles($aspirin_chg, (1, 0, 0))
+    )
+    run_and_log_bt(
+        "tasker_type (1, 0, 0)", @benchmarkable tasker_type($aspirin_chg, (1, 0, 0))
+    )
 
-    println("==========================================================================================")
+    println(
+        "==========================================================================================",
+    )
     println("Benchmark timeline metrics logged to: $tsv_file\n")
 end

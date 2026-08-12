@@ -29,25 +29,25 @@ Provides a universal fallback (σ = 3.5 Å, ε = 0.10 kcal/mol, r_cov = 1.20 Å)
 """
 function uff_parameters(species::Symbol)
     table = Dict{Symbol, UFFParameters}(
-        :H  => UFFParameters(2.571, 0.044, 0.31),
+        :H => UFFParameters(2.571, 0.044, 0.31),
         :He => UFFParameters(2.104, 0.056, 0.28),
         :Li => UFFParameters(2.184, 0.025, 1.28),
         :Be => UFFParameters(2.446, 0.085, 0.96),
-        :B  => UFFParameters(3.638, 0.180, 0.84),
-        :C  => UFFParameters(3.431, 0.105, 0.76),
-        :N  => UFFParameters(3.260, 0.069, 0.71),
-        :O  => UFFParameters(3.118, 0.060, 0.66),
-        :F  => UFFParameters(3.093, 0.050, 0.57),
+        :B => UFFParameters(3.638, 0.180, 0.84),
+        :C => UFFParameters(3.431, 0.105, 0.76),
+        :N => UFFParameters(3.260, 0.069, 0.71),
+        :O => UFFParameters(3.118, 0.060, 0.66),
+        :F => UFFParameters(3.093, 0.050, 0.57),
         :Ne => UFFParameters(3.243, 0.042, 0.58),
         :Na => UFFParameters(2.658, 0.030, 1.66),
         :Mg => UFFParameters(2.691, 0.111, 1.41),
         :Al => UFFParameters(4.008, 0.505, 1.21),
         :Si => UFFParameters(3.826, 0.402, 1.11),
-        :P  => UFFParameters(3.695, 0.305, 1.07),
-        :S  => UFFParameters(3.595, 0.274, 1.05),
+        :P => UFFParameters(3.695, 0.305, 1.07),
+        :S => UFFParameters(3.595, 0.274, 1.05),
         :Cl => UFFParameters(3.517, 0.227, 1.02),
         :Ar => UFFParameters(3.468, 0.238, 1.06),
-        :K  => UFFParameters(3.396, 0.035, 2.03),
+        :K => UFFParameters(3.396, 0.035, 2.03),
         :Ca => UFFParameters(3.028, 0.238, 1.76),
         :Fe => UFFParameters(2.594, 0.013, 1.32),
         :Co => UFFParameters(2.559, 0.014, 1.26),
@@ -55,7 +55,7 @@ function uff_parameters(species::Symbol)
         :Cu => UFFParameters(3.114, 0.005, 1.32),
         :Zn => UFFParameters(2.462, 0.124, 1.22),
         :Br => UFFParameters(3.732, 0.251, 1.20),
-        :I  => UFFParameters(4.009, 0.339, 1.39)
+        :I => UFFParameters(4.009, 0.339, 1.39),
     )
     return get(table, species, UFFParameters(3.500, 0.100, 1.20))
 end
@@ -101,13 +101,15 @@ function SubstrateCache(crystal::Crystal)
 end
 
 # Append newly deposited adsorbate atom into the substrate cache for multi-layer stacking
-function push_atom!(cache::SubstrateCache, coord::SVector{3, Float64}, charge::Float64, species::Symbol)
+function push_atom!(
+    cache::SubstrateCache, coord::SVector{3, Float64}, charge::Float64, species::Symbol
+)
     push!(cache.coords, coord)
     push!(cache.charges, charge)
     uff = uff_parameters(species)
     push!(cache.sigmas, uff.sigma)
     push!(cache.epsilons, uff.epsilon)
-    push!(cache.radii, uff.r_cov)
+    return push!(cache.radii, uff.r_cov)
 end
 
 """
@@ -137,6 +139,8 @@ function prepare_adsorbate_template(adsorbate::Union{Symbol, Crystal})
         epsilons = Float64[uff.epsilon]
         radii = Float64[uff.r_cov]
         edges = Tuple{Int, Int}[]
+    elseif adsorbate isa AbstractString
+        return prepare_adsorbate_template(read_adsorbate(adsorbate))
     else
         mols = detect_molecules(adsorbate)
         if !isempty(mols)
@@ -144,15 +148,26 @@ function prepare_adsorbate_template(adsorbate::Union{Symbol, Crystal})
             species = m.species
             charges = m.charges
             n = length(species)
-            rel_coords = [SVector{3, Float64}(m.relative_coords_cart[1, i], m.relative_coords_cart[2, i], m.relative_coords_cart[3, i]) for i in 1:n]
+            rel_coords = [
+                SVector{3, Float64}(
+                    m.relative_coords_cart[1, i],
+                    m.relative_coords_cart[2, i],
+                    m.relative_coords_cart[3, i],
+                ) for i in 1:n
+            ]
             edges = m.edges
         else
             species = adsorbate.atoms.species
             n = length(species)
             charges = has_charges(adsorbate) ? adsorbate.charges.q : zeros(Float64, n)
             c_cart = Cart(adsorbate.atoms.coords, adsorbate.box).x
-            centroid = SVector{3, Float64}(sum(c_cart[1, :])/n, sum(c_cart[2, :])/n, sum(c_cart[3, :])/n)
-            rel_coords = [SVector{3, Float64}(c_cart[1, i], c_cart[2, i], c_cart[3, i]) - centroid for i in 1:n]
+            centroid = SVector{3, Float64}(
+                sum(c_cart[1, :])/n, sum(c_cart[2, :])/n, sum(c_cart[3, :])/n
+            )
+            rel_coords = [
+                SVector{3, Float64}(c_cart[1, i], c_cart[2, i], c_cart[3, i]) - centroid for
+                i in 1:n
+            ]
             edges = Tuple{Int, Int}[]
         end
         sigmas = Vector{Float64}(undef, n)
@@ -187,9 +202,15 @@ function random_rotation_matrix()
     q3 = sqrt(u1) * cos(2.0 * pi * u3)
 
     return SMatrix{3, 3, Float64, 9}(
-        1.0 - 2.0*(q2^2 + q3^2), 2.0*(q1*q2 + q0*q3), 2.0*(q1*q3 - q0*q2),
-        2.0*(q1*q2 - q0*q3), 1.0 - 2.0*(q1^2 + q3^2), 2.0*(q2*q3 + q0*q1),
-        2.0*(q1*q3 + q0*q2), 2.0*(q2*q3 - q0*q1), 1.0 - 2.0*(q1^2 + q2^2)
+        1.0 - 2.0*(q2^2 + q3^2),
+        2.0*(q1*q2 + q0*q3),
+        2.0*(q1*q3 - q0*q2),
+        2.0*(q1*q2 - q0*q3),
+        1.0 - 2.0*(q1^2 + q3^2),
+        2.0*(q2*q3 + q0*q1),
+        2.0*(q1*q3 + q0*q2),
+        2.0*(q2*q3 - q0*q1),
+        1.0 - 2.0*(q1^2 + q2^2),
     )
 end
 
@@ -199,9 +220,7 @@ end
 Calculate fractional (x, y) adsorption site coordinates on the surface of `slab`.
 """
 function find_adsorption_sites(
-    slab::Crystal,
-    site::Union{Symbol, Tuple{Float64, Float64}},
-    coverage::Tuple{Int, Int}
+    slab::Crystal, site::Union{Symbol, Tuple{Float64, Float64}}, coverage::Tuple{Int, Int}
 )
     Nx_ads, Ny_ads = coverage
     sites = Tuple{Float64, Float64}[]
@@ -223,27 +242,39 @@ function find_adsorption_sites(
         z_max_idx = argmax(coords_cart[3, :])
         top_frac = slab.atoms.coords.xf[:, z_max_idx]
         for i in 0:(Nx_ads - 1), j in 0:(Ny_ads - 1)
-            push!(sites, (mod(top_frac[1] + i / Nx_ads, 1.0), mod(top_frac[2] + j / Ny_ads, 1.0)))
+            push!(
+                sites,
+                (mod(top_frac[1] + i / Nx_ads, 1.0), mod(top_frac[2] + j / Ny_ads, 1.0)),
+            )
         end
     elseif site == :bridge
         coords_cart = Cart(slab.atoms.coords, slab.box).x
         n = slab.atoms.n
-        perm = sortperm(coords_cart[3, :], rev=true)
+        perm = sortperm(coords_cart[3, :]; rev=true)
         idx1 = perm[1]
         idx2 = n >= 2 ? perm[2] : perm[1]
         f1 = slab.atoms.coords.xf[:, idx1]
         f2 = slab.atoms.coords.xf[:, idx2]
         bridge_frac = (f1 .+ f2) ./ 2.0
         for i in 0:(Nx_ads - 1), j in 0:(Ny_ads - 1)
-            push!(sites, (mod(bridge_frac[1] + i / Nx_ads, 1.0), mod(bridge_frac[2] + j / Ny_ads, 1.0)))
+            push!(
+                sites,
+                (
+                    mod(bridge_frac[1] + i / Nx_ads, 1.0),
+                    mod(bridge_frac[2] + j / Ny_ads, 1.0),
+                ),
+            )
         end
     else # :hollow fallback
         coords_cart = Cart(slab.atoms.coords, slab.box).x
-        perm = sortperm(coords_cart[3, :], rev=true)
+        perm = sortperm(coords_cart[3, :]; rev=true)
         top_k = min(4, slab.atoms.n)
-        mean_frac = vec(sum(slab.atoms.coords.xf[:, perm[1:top_k]], dims=2) ./ top_k)
+        mean_frac = vec(sum(slab.atoms.coords.xf[:, perm[1:top_k]]; dims=2) ./ top_k)
         for i in 0:(Nx_ads - 1), j in 0:(Ny_ads - 1)
-            push!(sites, (mod(mean_frac[1] + i / Nx_ads, 1.0), mod(mean_frac[2] + j / Ny_ads, 1.0)))
+            push!(
+                sites,
+                (mod(mean_frac[1] + i / Nx_ads, 1.0), mod(mean_frac[2] + j / Ny_ads, 1.0)),
+            )
         end
     end
 
@@ -273,7 +304,7 @@ function find_contact_height(
     site_xy_cart::SVector{2, Float64},
     c_to_f::Matrix{Float64},
     f_to_c::Matrix{Float64};
-    d_contact::Union{Nothing, Float64}=nothing
+    d_contact::Union{Nothing, Float64}=nothing,
 )
     n_sub = length(sub.coords)
     n_ads = length(ads.species)
@@ -349,7 +380,7 @@ function evaluate_interaction_energy(
     ads_placed_coords::Vector{SVector{3, Float64}},
     c_to_f::Matrix{Float64},
     f_to_c::Matrix{Float64};
-    r_cut::Float64=10.0
+    r_cut::Float64=10.0,
 )
     n_sub = length(sub.coords)
     n_ads = length(ads.species)
@@ -423,7 +454,7 @@ function sample_adsorbate_candidate(
     n_trials::Int=50,
     d_contact::Union{Nothing, Float64}=nothing,
     selector::Symbol=:energy,
-    temperature::Float64=300.0
+    temperature::Float64=300.0,
 )
     n_ads = length(ads.species)
     results = Vector{Tuple{Vector{SVector{3, Float64}}, Float64}}(undef, n_trials)
@@ -435,15 +466,25 @@ function sample_adsorbate_candidate(
         rot_coords = [R_rand * r for r in ads.rel_coords]
 
         # 2. Downward vertical pulling to physical contact height
-        z_adsorb = find_contact_height(sub, ads, rot_coords, site_xy_cart, c_to_f, f_to_c; d_contact=d_contact)
+        z_adsorb = find_contact_height(
+            sub, ads, rot_coords, site_xy_cart, c_to_f, f_to_c; d_contact=d_contact
+        )
 
         # 3. Position candidate in 3D space
-        placed_coords = [SVector{3, Float64}(site_xy_cart[1] + rot_coords[k][1], site_xy_cart[2] + rot_coords[k][2], z_adsorb + rot_coords[k][3]) for k in 1:n_ads]
+        placed_coords = [
+            SVector{3, Float64}(
+                site_xy_cart[1] + rot_coords[k][1],
+                site_xy_cart[2] + rot_coords[k][2],
+                z_adsorb + rot_coords[k][3],
+            ) for k in 1:n_ads
+        ]
 
         # 4. Energy / Fitness evaluation
         metric_val = 0.0
         if selector == :energy
-            metric_val = evaluate_interaction_energy(sub, ads, placed_coords, c_to_f, f_to_c)
+            metric_val = evaluate_interaction_energy(
+                sub, ads, placed_coords, c_to_f, f_to_c
+            )
         else # :contact
             metric_val = z_adsorb
         end
@@ -500,7 +541,7 @@ function make_adsorbate_slab(
     selector::Symbol=:energy,
     temperature::Float64=300.0,
     vacuum::Float64=10.0,
-    orthogonalize_z::Bool=true
+    orthogonalize_z::Bool=true,
 )
     # Input validation guard clauses
     if vacuum < 0.0
@@ -521,7 +562,11 @@ function make_adsorbate_slab(
     sub_cache = SubstrateCache(slab)
 
     # Step 2: Determine adsorbate layer count N_layers from layer_height target or n_layers keyword
-    ads_z_extent = isempty(ads.rel_coords) ? 1.0 : (maximum(c[3] for c in ads.rel_coords) - minimum(c[3] for c in ads.rel_coords))
+    ads_z_extent = if isempty(ads.rel_coords)
+        1.0
+    else
+        (maximum(c[3] for c in ads.rel_coords) - minimum(c[3] for c in ads.rel_coords))
+    end
     ads_layer_spacing = max(2.2, ads_z_extent + (d_contact !== nothing ? d_contact : 2.0))
 
     N_layers = 1
@@ -540,7 +585,8 @@ function make_adsorbate_slab(
     n_slab_atoms = slab.atoms.n
 
     all_species = Symbol[slab.atoms.species...]
-    all_charges = has_charges(slab) ? Float64[slab.charges.q...] : zeros(Float64, n_slab_atoms)
+    all_charges =
+        has_charges(slab) ? Float64[slab.charges.q...] : zeros(Float64, n_slab_atoms)
     all_coords_cart = Vector{Float64}[slab_cart[:, i] for i in 1:n_slab_atoms]
     ads_edges_all = Tuple{Int, Int}[]
 
@@ -560,7 +606,7 @@ function make_adsorbate_slab(
                 n_trials=n_trials,
                 d_contact=d_contact,
                 selector=selector,
-                temperature=temperature
+                temperature=temperature,
             )
 
             offset = length(all_species)
@@ -568,7 +614,10 @@ function make_adsorbate_slab(
             for a in 1:length(ads.species)
                 push!(all_species, ads.species[a])
                 push!(all_charges, ads.charges[a])
-                push!(all_coords_cart, [placed_coords[a][1], placed_coords[a][2], placed_coords[a][3]])
+                push!(
+                    all_coords_cart,
+                    [placed_coords[a][1], placed_coords[a][2], placed_coords[a][3]],
+                )
                 push_atom!(sub_cache, placed_coords[a], ads.charges[a], ads.species[a])
             end
 
@@ -623,8 +672,27 @@ function make_adsorbate_slab(
 end
 
 """
-    add_adsorbate!(slab::Crystal, adsorbate::Union{Symbol, Crystal}; kwargs...)
+    add_adsorbate!(slab::Crystal, adsorbate::Union{Symbol, Crystal, AbstractString}; kwargs...)
 
 In-place alias for `make_adsorbate_slab`.
 """
 const add_adsorbate! = make_adsorbate_slab
+
+"""
+    make_adsorbate_slab(slab::Crystal, filename::AbstractString; kwargs...)
+
+Overload for depositing adsorbates directly from any computational chemistry file (.xyz, .mol, .mol2, .pdb, .sdf).
+"""
+function make_adsorbate_slab(slab::Crystal, filename::AbstractString; kwargs...)
+    return make_adsorbate_slab(slab, read_adsorbate(filename); kwargs...)
+end
+
+"""
+    read_adsorbate(filename::AbstractString) -> Crystal
+
+Read an adsorbate molecule from disk using `Chemfiles.jl` (.xyz, .mol, .mol2, .pdb, .sdf, .gro, .cif)
+and return it as a non-periodic `Crystal` object.
+"""
+function read_adsorbate(filename::AbstractString)
+    return read_crystal_chemfiles(filename)
+end

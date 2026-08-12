@@ -3,6 +3,7 @@ module Xtals
 using AtomsBase,
     Bio3DView,
     CSV,
+    Chemfiles,
     DataFrames,
     Graphs,
     LinearAlgebra,
@@ -20,6 +21,7 @@ rc[:paths] = Dict{Symbol, String}()
 include("matter.jl")
 include("box.jl")
 include("crystal.jl")
+include("chemfiles_io.jl")
 include("distance.jl")
 include("misc.jl")
 include("repfactors.jl")
@@ -29,7 +31,9 @@ include("bonds.jl")
 include("slab.jl")
 include("adsorbate.jl")
 
-rc[:atomic_masses] = Dict([(Symbol(elem.symbol), ustrip(elem.atomic_mass)) for elem in elements[1:118]])
+rc[:atomic_masses] = Dict([
+    (Symbol(elem.symbol), ustrip(elem.atomic_mass)) for elem in elements[1:118]
+])
 rc[:cpk_colors] = DEFAULT_CPK_COLORS
 rc[:covalent_radii] = DEFAULT_COVALENT_RADII
 DEFAULT_BONDING_RULES = bondingrules()
@@ -121,10 +125,16 @@ export rc,
     # adsorbate.jl
     make_adsorbate_slab,
     add_adsorbate!,
+    read_adsorbate,
+    # chemfiles_io.jl
+    read_crystal_chemfiles,
+    write_crystal,
+    read_trajectory,
     get_bond_vector,
     calculate_bond_vectors!,
     clear_vectors!,
     bond_distance,
     infer_bonds
+
 @precompile_signatures(Xtals)
 end # module Xtals

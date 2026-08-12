@@ -4,11 +4,11 @@
         "vector test 1",
         box,
         Atoms([:H, :H, :H], Frac([
-                0.000 0.000 0.075
-                0.075 0.000 0.000
-                0.000 0.000 0.000
-            ])),
-        Charges{Frac}(0)
+            0.000 0.000 0.075
+            0.075 0.000 0.000
+            0.000 0.000 0.000
+        ])),
+        Charges{Frac}(0),
     )
 
     # check non-fatal error for calculating vectors w/o bonds
@@ -49,11 +49,11 @@
         "vector test 2",
         box,
         Atoms([:H, :H, :H], Frac([
-                1.000 0.000 0.075
-                0.075 0.000 0.000
-                0.000 0.000 0.000
-            ])),
-        Charges{Frac}(0)
+            1.000 0.000 0.075
+            0.075 0.000 0.000
+            0.000 0.000 0.000
+        ])),
+        Charges{Frac}(0),
     )
     infer_bonds!(xtal, true; calculate_vectors=true)
 
@@ -69,11 +69,11 @@
         "vector test 3",
         box,
         Atoms([:H, :H, :H], Frac([
-                0.000 0.075 0.150
-                0.000 0.000 0.000
-                0.000 0.000 0.000
-            ])),
-        Charges{Frac}(0)
+            0.000 0.075 0.150
+            0.000 0.000 0.000
+            0.000 0.000 0.000
+        ])),
+        Charges{Frac}(0),
     )
     infer_bonds!(xtal, true; calculate_vectors=true)
     @test isapprox(get_bond_vector(xtal, 1, 2), [0.75; 0.00; 0.00])
