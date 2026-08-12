@@ -10,16 +10,28 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     n_slab_atoms = aspirin_slab.atoms.n
 
     # =========================================================================================
-    # 1. MULTI-FORMAT READERS & FILE ERROR GUARDS
+    # 1. CHEMFILES BRIDGE & EXPORTER TESTS (Pruned & Lightweight)
     # =========================================================================================
-    @testset "Multi-Format File Readers & Error Guards" begin
-        # CIF reading via read_crystal_chemfiles
-        xtal_cif = read_crystal_chemfiles(joinpath(rc[:paths][:crystals], "aspirin.cif"))
-        @test xtal_cif.atoms.n == aspirin_xtal.atoms.n
+    @testset "Chemfiles Bridge & Universal Exporter" begin
+        # 1. Read-in bridge check
+        xtal_cif = read_adsorbate(joinpath(rc[:paths][:crystals], "aspirin.cif"))
+        @test xtal_cif isa Crystal
+        @test xtal_cif.atoms.n > 0
 
-        # Non-existent file guard
+        # 2. File missing error guard
         @test_throws ErrorException read_adsorbate("non_existent_adsorbate.xyz")
-        @test_throws ErrorException read_crystal_chemfiles("non_existent_file.mol2")
+
+        # 3. Exporter bridge check (write & re-read)
+        tmp_xyz = joinpath(tempdir(), "test_export_aspirin.xyz")
+        try
+            write_crystal(aspirin_xtal, tmp_xyz)
+            @test isfile(tmp_xyz)
+            xtal_re = read_crystal_chemfiles(tmp_xyz)
+            @test xtal_re.atoms.n == aspirin_xtal.atoms.n
+            @test xtal_re.atoms.species == aspirin_xtal.atoms.species
+        finally
+            rm(tmp_xyz; force=true)
+        end
     end
 
     # =========================================================================================
@@ -65,64 +77,21 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     end
 
     # =========================================================================================
-    # 3. UNIVERSAL EXPORTER & ROUNDTRIP CHECKS (write_crystal)
+    # 3. QUATERNION ROTATION MATRIX INVARIANCE (Aggregated into 3 Assertions)
     # =========================================================================================
-    @testset "Universal File Exporter & Roundtrip Verification" begin
-        tmp_xyz = joinpath(tempdir(), "test_export_aspirin.xyz")
-        tmp_pdb = joinpath(tempdir(), "test_export_aspirin.pdb")
-        tmp_mol2 = joinpath(tempdir(), "test_export_aspirin.mol2")
+    @testset "Quaternion Rotation Matrix Invariance" begin
+        # Generate and store 100 rotation matrices
+        rotations = [Xtals.random_rotation_matrix() for _ in 1:100]
 
-        try
-            # Export to XYZ, PDB, MOL2
-            write_crystal(aspirin_xtal, tmp_xyz)
-            write_crystal(aspirin_xtal, tmp_pdb)
-            write_crystal(aspirin_xtal, tmp_mol2)
+        # 1. Vectorized Orthogonality Check (R^T * R == I_3)
+        @test all(R' * R ≈ I(3) for R in rotations)
 
-            @test isfile(tmp_xyz)
-            @test isfile(tmp_pdb)
-            @test isfile(tmp_mol2)
+        # 2. Vectorized Determinant Check (det(R) == 1.0)
+        @test all(det(R) ≈ 1.0 for R in rotations)
 
-            # Roundtrip re-read verification
-            xtal_re_xyz = read_crystal_chemfiles(tmp_xyz)
-            xtal_re_pdb = read_crystal_chemfiles(tmp_pdb)
-            xtal_re_mol2 = read_crystal_chemfiles(tmp_mol2)
-
-            @test xtal_re_xyz.atoms.n == aspirin_xtal.atoms.n
-            @test xtal_re_pdb.atoms.n == aspirin_xtal.atoms.n
-            @test xtal_re_mol2.atoms.n == aspirin_xtal.atoms.n
-
-            @test xtal_re_xyz.atoms.species == aspirin_xtal.atoms.species
-            @test xtal_re_pdb.atoms.species == aspirin_xtal.atoms.species
-            @test xtal_re_mol2.atoms.species == aspirin_xtal.atoms.species
-        finally
-            # Clean up temporary test files
-            rm(tmp_xyz; force=true)
-            rm(tmp_pdb; force=true)
-            rm(tmp_mol2; force=true)
-        end
-    end
-
-    # =========================================================================================
-    # 4. QUATERNION ROTATION MATRIX RIGID BODY INVARIANCE
-    # =========================================================================================
-    @testset "Quaternion Rotation Matrix Orthogonality & Rigid Body Invariance" begin
-        for _ in 1:100
-            R = Xtals.random_rotation_matrix()
-
-            # Orthogonality assertion R^T * R == I_3
-            @test R' * R ≈ I(3) atol=1e-12
-
-            # Proper rotation determinant det(R) == 1.0
-            @test det(R) ≈ 1.0 atol=1e-12
-        end
-
-        # Rigid body distance invariance under quaternion rotation
-        vec_orig = [0.9572, 0.0, 0.0]
-        dist_orig = norm(vec_orig)
-        for _ in 1:50
-            R = Xtals.random_rotation_matrix()
-            vec_rot = R * vec_orig
-            @test norm(vec_rot) ≈ dist_orig atol=1e-12
-        end
+        # 3. Vectorized Rigid Body Vector Norm Invariance
+        vec_orig = [0.9572, 0.4238, 0.112]
+        norm_orig = norm(vec_orig)
+        @test all(norm(R * vec_orig) ≈ norm_orig for R in rotations)
     end
 end

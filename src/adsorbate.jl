@@ -128,18 +128,9 @@ struct AdsorbateTemplate
     edges::Vector{Tuple{Int, Int}}
 end
 
-# Prepare adsorbate template from a single atomic symbol or Crystal molecule
-function prepare_adsorbate_template(adsorbate::Union{Symbol, Crystal})
-    if adsorbate isa Symbol
-        species = Symbol[adsorbate]
-        charges = Float64[0.0]
-        rel_coords = SVector{3, Float64}[SVector{3, Float64}(0.0, 0.0, 0.0)]
-        uff = uff_parameters(adsorbate)
-        sigmas = Float64[uff.sigma]
-        epsilons = Float64[uff.epsilon]
-        radii = Float64[uff.r_cov]
-        edges = Tuple{Int, Int}[]
-    elseif adsorbate isa AbstractString
+# Prepare adsorbate template from a Crystal molecule or file path
+function prepare_adsorbate_template(adsorbate::Union{Crystal, AbstractString})
+    if adsorbate isa AbstractString
         return prepare_adsorbate_template(read_adsorbate(adsorbate))
     else
         mols = detect_molecules(adsorbate)
@@ -502,7 +493,7 @@ end
 # =========================================================================================
 
 """
-    adsorbed_slab = make_adsorbate_slab(slab::Crystal, adsorbate::Union{Symbol, Crystal};
+    adsorbed_slab = make_adsorbate_slab(slab::Crystal, adsorbate::Union{Crystal, AbstractString};
                                         coverage::Tuple{Int, Int}=(1, 1),
                                         site::Union{Symbol, Tuple{Float64, Float64}}=:grid,
                                         d_contact::Union{Nothing, Float64}=nothing,
@@ -519,7 +510,7 @@ and UFF force field interaction energy evaluation.
 
 # Arguments & Keywords
 - `slab::Crystal`: Base surface slab structure.
-- `adsorbate::Union{Symbol, Crystal}`: Adsorbate species (e.g. `:O`, `:H`) or molecule `Crystal` (e.g., H2O).
+- `adsorbate::Union{Crystal, AbstractString}`: Molecule `Crystal` or file path string (`"water.xyz"`, `"molecule.mol"`).
 - `coverage::Tuple{Int, Int}`: Adsorbate replication grid (Nx, Ny) per surface cell.
 - `site::Union{Symbol, Tuple{Float64, Float64}}`: Adsorption site mode (`:grid`, `:top`, `:bridge`, `:hollow`, or `(x_frac, y_frac)`).
 - `d_contact::Union{Nothing, Float64}`: Target physical contact distance in Ångströms.
@@ -531,7 +522,7 @@ and UFF force field interaction energy evaluation.
 """
 function make_adsorbate_slab(
     slab::Crystal,
-    adsorbate::Union{Symbol, Crystal};
+    adsorbate::Union{Crystal, AbstractString};
     coverage::Tuple{Int, Int}=(1, 1),
     site::Union{Symbol, Tuple{Float64, Float64}}=:grid,
     d_contact::Union{Nothing, Float64}=nothing,
