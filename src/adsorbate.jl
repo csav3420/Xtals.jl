@@ -214,7 +214,7 @@ end
 
 Calculate physical non-overlapping z-contact height z_adsorb for a candidate adsorbate state.
 Lowers the adsorbate along -z until the minimum distance between any adsorbate atom k and substrate
-atom j matches physical contact distance d_target (taking 2D periodic boundary conditions into account).
+atom j matches physical van der Waals contact distance d_target (taking 2D periodic boundary conditions into account).
 """
 function find_contact_height(
     sub::SubstrateCache,
@@ -229,25 +229,35 @@ function find_contact_height(
     n_ads = length(ads.species)
     z_contact_max = -Inf
 
+    # Extract 2D surface basis matrices to prevent 3D tilt coordinate mixing
+    f_to_c_2d = f_to_c[1:2, 1:2]
+    c_to_f_2d = inv(f_to_c_2d)
+
     for k in 1:n_ads
         rx_k = cand_xy_cart[1] + rotated_rel_coords[k][1]
         ry_k = cand_xy_cart[2] + rotated_rel_coords[k][2]
         rz_k = rotated_rel_coords[k][3]
 
-        r_ads_k = ads.radii[k]
+        sig_k = ads.sigmas[k]
 
         for j in 1:n_sub
             dx_cart = rx_k - sub.coords[j][1]
             dy_cart = ry_k - sub.coords[j][2]
 
-            d_frac = c_to_f * [dx_cart, dy_cart, 0.0]
-            d_frac[1] -= round(d_frac[1])
-            d_frac[2] -= round(d_frac[2])
-            d_frac[3] = 0.0
-            d_cart_pbc = f_to_c * d_frac
+            df_x = c_to_f_2d[1, 1] * dx_cart + c_to_f_2d[1, 2] * dy_cart
+            df_y = c_to_f_2d[2, 1] * dx_cart + c_to_f_2d[2, 2] * dy_cart
 
-            r_xy_sq = d_cart_pbc[1]^2 + d_cart_pbc[2]^2
-            target_d = d_contact !== nothing ? d_contact : (r_ads_k + sub.radii[j] + 0.4)
+            df_x -= round(df_x)
+            df_y -= round(df_y)
+
+            dx_pbc = f_to_c_2d[1, 1] * df_x + f_to_c_2d[1, 2] * df_y
+            dy_pbc = f_to_c_2d[2, 1] * df_x + f_to_c_2d[2, 2] * df_y
+
+            r_xy_sq = dx_pbc^2 + dy_pbc^2
+
+            # Use physical van der Waals UFF contact threshold (sigma_ij * 0.85)
+            target_d =
+                d_contact !== nothing ? d_contact : (0.85 * (sig_k + sub.sigmas[j]) / 2.0)
 
             if r_xy_sq < target_d^2
                 dz_needed = sqrt(target_d^2 - r_xy_sq)
@@ -278,7 +288,7 @@ end
                                  r_cut::Float64=10.0) -> Float64
 
 Calculate pairwise interaction energy E_total = E_LJ + E_Coulomb (kcal/mol) between an adsorbate
-candidate and substrate atoms.
+candidate and substrate atoms using 2D lateral periodic boundary conditions.
 """
 function evaluate_interaction_energy(
     sub::SubstrateCache,
@@ -293,6 +303,10 @@ function evaluate_interaction_energy(
     r_cut_sq = r_cut^2
     ke = 1389.354 # Coulomb constant C_e in kcal/mol * Å / e^2
 
+    # Extract 2D surface basis matrices to prevent 3D tilt coordinate mixing
+    f_to_c_2d = f_to_c[1:2, 1:2]
+    c_to_f_2d = inv(f_to_c_2d)
+
     e_total = 0.0
 
     for k in 1:n_ads
@@ -306,12 +320,16 @@ function evaluate_interaction_energy(
             dy_cart = r_k[2] - sub.coords[j][2]
             dz_cart = r_k[3] - sub.coords[j][3]
 
-            d_frac = c_to_f * [dx_cart, dy_cart, dz_cart]
-            d_frac[1] -= round(d_frac[1])
-            d_frac[2] -= round(d_frac[2])
-            d_cart_pbc = f_to_c * d_frac
+            df_x = c_to_f_2d[1, 1] * dx_cart + c_to_f_2d[1, 2] * dy_cart
+            df_y = c_to_f_2d[2, 1] * dx_cart + c_to_f_2d[2, 2] * dy_cart
 
-            r_sq = d_cart_pbc[1]^2 + d_cart_pbc[2]^2 + d_cart_pbc[3]^2
+            df_x -= round(df_x)
+            df_y -= round(df_y)
+
+            dx_pbc = f_to_c_2d[1, 1] * df_x + f_to_c_2d[1, 2] * df_y
+            dy_pbc = f_to_c_2d[2, 1] * df_x + f_to_c_2d[2, 2] * df_y
+
+            r_sq = dx_pbc^2 + dy_pbc^2 + dz_cart^2
 
             if r_sq < r_cut_sq && r_sq > 0.1
                 r = sqrt(r_sq)

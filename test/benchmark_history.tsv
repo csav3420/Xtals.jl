@@ -273,3 +273,12 @@ timestamp	julia_version	threads	operation	time_ms	memory_mb
 2026-08-13 09:36:53	1.12.6	1	tasker_type (1, 0, 0)	28.57	13.9
 2026-08-13 09:36:53	1.12.6	1	make_adsorbate_slab (n_molecules=4)	39.26	28.6
 2026-08-13 09:36:53	1.12.6	1	evaluate_interaction_energy (UFF)	0.14	0.27
+2026-08-13 09:52:38	1.12.6	1	surface_basis (2, 1, 2)	5.0	4.93
+2026-08-13 09:52:38	1.12.6	1	detect_molecules (Aspirin)	14.56	1.28
+2026-08-13 09:52:38	1.12.6	1	get_terminations (0,1,0; unique)	28.28	14.0
+2026-08-13 09:52:38	1.12.6	1	make_slab (1,1,0; 1 layer)	56.07	27.74
+2026-08-13 09:52:38	1.12.6	1	make_slab (2,1,2; min_size 50x50 Å)	41.15	12.93
+2026-08-13 09:52:38	1.12.6	1	layer_dipoles (1, 0, 0)	28.97	13.9
+2026-08-13 09:52:38	1.12.6	1	tasker_type (1, 0, 0)	28.31	13.9
+2026-08-13 09:52:38	1.12.6	1	make_adsorbate_slab (n_molecules=4)	18.56	1.79
+2026-08-13 09:52:38	1.12.6	1	evaluate_interaction_energy (UFF)	0.03	0.0
