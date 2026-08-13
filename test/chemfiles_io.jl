@@ -50,25 +50,23 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         template = Xtals.prepare_adsorbate_template(ads_cif)
         @test length(template.species) == n_mol_atoms
 
-        # Deposition scaling: 1 molecule at a time per site per layer
+        # Deposition scaling: 1 molecule deposition
         ads_deposited_slab = make_adsorbate_slab(
             aspirin_slab,
             joinpath(rc[:paths][:crystals], "aspirin.cif");
-            coverage=(1, 1),
-            n_layers=1,
+            n_molecules=1,
             n_trials=5,
         )
         @test ads_deposited_slab.atoms.n == n_slab_atoms + n_mol_atoms
 
-        # 2x2 grid deposition scaling (4 molecules deposited)
-        ads_2x2_slab = make_adsorbate_slab(
+        # 3 molecules deposition scaling
+        ads_3mol_slab = make_adsorbate_slab(
             aspirin_slab,
             joinpath(rc[:paths][:crystals], "aspirin.cif");
-            coverage=(2, 2),
-            n_layers=1,
+            n_molecules=3,
             n_trials=5,
         )
-        @test ads_2x2_slab.atoms.n == n_slab_atoms + (4 * n_mol_atoms)
+        @test ads_3mol_slab.atoms.n == n_slab_atoms + (3 * n_mol_atoms)
 
         # Zero atom overlaps assertion
         overlap_flag, overlap_pairs = overlap(ads_deposited_slab, false)

@@ -1,5 +1,6 @@
 using Test
 using Xtals
+using Xtals: SVector
 using LinearAlgebra
 
 set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
@@ -14,13 +15,14 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     # 1. STRUCTURAL INTEGRITY & ZERO ATOM OVERLAP
     # =========================================================================================
     @testset "Structural Integrity & Overlap Prevention" begin
-        ads_mol_slab = make_adsorbate_slab(
-            aspirin_slab, aspirin_xtal; coverage=(1, 1), n_trials=5
+        # Exact molecule count deposition (n_molecules=1)
+        ads_1mol_slab = make_adsorbate_slab(
+            aspirin_slab, aspirin_xtal; n_molecules=1, n_trials=10
         )
-        @test ads_mol_slab.atoms.n == n_slab_atoms + n_mol_atoms
+        @test ads_1mol_slab.atoms.n == n_slab_atoms + n_mol_atoms
 
         # Zero atom overlaps assertion
-        overlap_flag, overlap_pairs = overlap(ads_mol_slab, false)
+        overlap_flag, overlap_pairs = overlap(ads_1mol_slab, false)
         @test !overlap_flag
         @test isempty(overlap_pairs)
 
@@ -30,8 +32,8 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         ads_file_slab = make_adsorbate_slab(
             aspirin_slab,
             joinpath(rc[:paths][:crystals], "aspirin.cif");
-            coverage=(1, 1),
-            n_trials=5,
+            n_molecules=1,
+            n_trials=10,
         )
         @test ads_file_slab.atoms.n == n_slab_atoms + n_file_mol_atoms
         overlap_flag_file, _ = overlap(ads_file_slab, false)
@@ -39,48 +41,40 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     end
 
     # =========================================================================================
-    # 2. ATOM COUNT SCALING & FILM THICKNESS (layer_height)
+    # 2. MOLECULE COUNT SCALING & FILM THICKNESS (layer_height)
     # =========================================================================================
-    @testset "Atom Count Scaling & Film Height" begin
-        # 2x2 coverage grid = 4 adsorbates
-        ads_grid_slab = make_adsorbate_slab(
-            aspirin_slab, aspirin_xtal; coverage=(2, 2), n_trials=5
+    @testset "Molecule Count Scaling & Film Height" begin
+        # Exact 3 molecules deposition
+        ads_3mol_slab = make_adsorbate_slab(
+            aspirin_slab, aspirin_xtal; n_molecules=3, n_trials=10
         )
-        @test ads_grid_slab.atoms.n == n_slab_atoms + (4 * n_mol_atoms)
+        @test ads_3mol_slab.atoms.n == n_slab_atoms + (3 * n_mol_atoms)
 
-        # 2 discrete layers
-        ads_2layer_slab = make_adsorbate_slab(
-            aspirin_slab, aspirin_xtal; coverage=(1, 1), n_layers=2, n_trials=5
-        )
-        @test ads_2layer_slab.atoms.n == n_slab_atoms + (2 * n_mol_atoms)
+        # Zero atom overlap assertion for multi-molecule film
+        overlap_flag_3, _ = overlap(ads_3mol_slab, false)
+        @test !overlap_flag_3
 
         # Film height target (layer_height = 10.0 Å)
         ads_10a_slab = make_adsorbate_slab(
-            aspirin_slab, aspirin_xtal; coverage=(1, 1), layer_height=10.0, n_trials=5
+            aspirin_slab, aspirin_xtal; layer_height=10.0, n_trials=10
         )
         @test ads_10a_slab.atoms.n > n_slab_atoms + n_mol_atoms
         @test ads_10a_slab.box.f_to_c[3, 3] > aspirin_slab.box.f_to_c[3, 3]
     end
 
     # =========================================================================================
-    # 3. SELECTION MODES & IN-PLACE ALIAS
+    # 3. IN-PLACE ALIAS & DEFAULT SOLVATION OVERLAYER
     # =========================================================================================
-    @testset "Candidate Selection Modes & Aliases" begin
-        ads_energy_slab = make_adsorbate_slab(
-            aspirin_slab, aspirin_xtal; selector=:energy, n_trials=5
-        )
-        @test ads_energy_slab.atoms.n == n_slab_atoms + n_mol_atoms
-
-        ads_contact_slab = make_adsorbate_slab(
-            aspirin_slab, aspirin_xtal; selector=:contact, n_trials=5
-        )
-        @test ads_contact_slab.atoms.n == n_slab_atoms + n_mol_atoms
-
+    @testset "Aliases & Default Overlayer" begin
         # Alias add_adsorbate!
         ads_alias_slab = add_adsorbate!(
-            aspirin_slab, aspirin_xtal; coverage=(1, 1), n_trials=5
+            aspirin_slab, aspirin_xtal; n_molecules=1, n_trials=10
         )
         @test ads_alias_slab.atoms.n == n_slab_atoms + n_mol_atoms
+
+        # Default overlayer (layer_height=3.0 Å)
+        ads_default_slab = make_adsorbate_slab(aspirin_slab, aspirin_xtal; n_trials=10)
+        @test ads_default_slab.atoms.n >= n_slab_atoms + n_mol_atoms
     end
 
     # =========================================================================================
@@ -97,12 +91,12 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
             aspirin_slab, aspirin_xtal; layer_height=-10.0
         )
         @test_throws ArgumentError make_adsorbate_slab(
-            aspirin_slab, aspirin_xtal; n_layers=0
+            aspirin_slab, aspirin_xtal; n_molecules=0
         )
 
         # Coordinate dimension sanity
         ads_test = make_adsorbate_slab(
-            aspirin_slab, aspirin_xtal; coverage=(1, 1), n_trials=5
+            aspirin_slab, aspirin_xtal; n_molecules=1, n_trials=5
         )
         @test size(ads_test.atoms.coords.xf, 1) == 3
         @test size(ads_test.atoms.coords.xf, 2) == ads_test.atoms.n
@@ -115,7 +109,7 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     # =========================================================================================
     @testset "Physical & Thermodynamic Validation" begin
         ads_phys_slab = make_adsorbate_slab(
-            aspirin_slab, aspirin_xtal; vacuum=10.0, n_trials=5
+            aspirin_slab, aspirin_xtal; vacuum=10.0, n_trials=10
         )
         c_cart = Cart(ads_phys_slab.atoms.coords, ads_phys_slab.box).x
         z_coords = c_cart[3, :]
@@ -130,5 +124,55 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
 
         # Total charge conservation
         @test sum(ads_phys_slab.charges.q) ≈ sum(aspirin_slab.charges.q) atol=1e-5
+    end
+
+    # =========================================================================================
+    # 6. FORCE FIELD PHYSICAL INTERACTION ENERGY VALIDATION (Water-Water H-Bonding)
+    # =========================================================================================
+    @testset "Intermolecular Force Field Energy Physical Validation" begin
+        species = [:O, :H, :H]
+        charges = [-0.8476, 0.4238, 0.4238]
+        rel_w1 = [
+            SVector(0.0, 0.0, 0.0), SVector(0.9572, 0.0, 0.0), SVector(-0.2399, 0.9272, 0.0)
+        ]
+
+        sigmas = [Xtals.uff_parameters(s).sigma for s in species]
+        epsilons = [Xtals.uff_parameters(s).epsilon for s in species]
+        radii = [Xtals.uff_parameters(s).r_cov for s in species]
+
+        sub = Xtals.SubstrateCache(rel_w1, charges, sigmas, epsilons, radii)
+        ads_template = Xtals.AdsorbateTemplate(
+            species, charges, rel_w1, sigmas, epsilons, radii, [(1, 2), (1, 3)]
+        )
+
+        box_mat = [50.0 0.0 0.0; 0.0 50.0 0.0; 0.0 0.0 50.0]
+        c_to_f = inv(box_mat)
+        f_to_c = box_mat
+
+        best_E = Inf
+        best_r_OH = 0.0
+
+        for r_OO in 2.2:0.05:3.8
+            for trial in 1:100
+                R = Xtals.random_rotation_matrix()
+                w2_center = SVector(r_OO, 0.0, 0.0)
+                placed_w2 = [w2_center + R * r for r in rel_w1]
+
+                E_tot = Xtals.evaluate_interaction_energy(
+                    sub, ads_template, placed_w2, c_to_f, f_to_c
+                )
+                if E_tot < best_E
+                    best_E = E_tot
+                    d_o1_h2 = norm(sub.coords[1] - placed_w2[2])
+                    d_o1_h3 = norm(sub.coords[1] - placed_w2[3])
+                    d_o2_h1 = norm(placed_w2[1] - sub.coords[2])
+                    best_r_OH = min(d_o1_h2, d_o1_h3, d_o2_h1)
+                end
+            end
+        end
+
+        # Assert favorable binding energy and realistic hydrogen bond distance
+        @test best_E < -10.0 # Highly favorable attractive binding energy (kcal/mol)
+        @test 1.8 <= best_r_OH <= 2.4 # Realistic O...H hydrogen bond distance (Å)
     end
 end

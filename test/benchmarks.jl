@@ -127,6 +127,31 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         "tasker_type (1, 0, 0)", @benchmarkable tasker_type($aspirin_chg, (1, 0, 0))
     )
 
+    # Setup pre-created slab and adsorbate data for minimal benchmark overhead
+    aspirin_slab_bench = make_slab(aspirin, (1, 1, 0); vacuum=10.0, layers=1)[1]
+    ads_file_bench = joinpath(rc[:paths][:crystals], "aspirin.cif")
+    ads_bench = Xtals.prepare_adsorbate_template(ads_file_bench)
+    sub_cache_bench = Xtals.SubstrateCache(aspirin_slab_bench)
+    placed_bench = [sub_cache_bench.coords[i] for i in 1:length(ads_bench.species)]
+
+    run_and_log_bt(
+        "make_adsorbate_slab (n_molecules=4)",
+        @benchmarkable make_adsorbate_slab(
+            $aspirin_slab_bench, $ads_file_bench; n_molecules=4, n_trials=10
+        )
+    )
+
+    run_and_log_bt(
+        "evaluate_interaction_energy (UFF)",
+        @benchmarkable Xtals.evaluate_interaction_energy(
+            $sub_cache_bench,
+            $ads_bench,
+            $placed_bench,
+            $aspirin_slab_bench.box.c_to_f,
+            $aspirin_slab_bench.box.f_to_c,
+        )
+    )
+
     println(
         "==========================================================================================",
     )
