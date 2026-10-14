@@ -18,7 +18,16 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test xtal_cif isa Crystal
         @test xtal_cif.atoms.n > 0
 
-        # 2. File missing error guard
+        # 2. Element Symbol Sanitization Tests (PeriodicTable.jl Integration)
+        @test Xtals.parse_element_symbol("OH") == :O
+        @test Xtals.parse_element_symbol("OW") == :O
+        @test Xtals.parse_element_symbol("HW1") == :H
+        @test Xtals.parse_element_symbol("C12") == :C
+        @test Xtals.parse_element_symbol("Fe_a") == :Fe
+        @test Xtals.parse_element_symbol("X", 8) == :O
+        @test Xtals.parse_element_symbol("X", 1) == :H
+
+        # 3. File missing error guard
         @test_throws ErrorException read_adsorbate("non_existent_adsorbate.xyz")
 
         # 3. Exporter bridge check (write & re-read)

@@ -60,6 +60,15 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         )
         @test ads_10a_slab.atoms.n > n_slab_atoms + n_mol_atoms
         @test ads_10a_slab.box.f_to_c[3, 3] > aspirin_slab.box.f_to_c[3, 3]
+
+        # Reproducible RNG seed test (seed=42)
+        ads_seed1 = make_adsorbate_slab(
+            aspirin_slab, aspirin_xtal; n_molecules=2, n_trials=10, seed=42
+        )
+        ads_seed2 = make_adsorbate_slab(
+            aspirin_slab, aspirin_xtal; n_molecules=2, n_trials=10, seed=42
+        )
+        @test ads_seed1.atoms.coords.xf ≈ ads_seed2.atoms.coords.xf
     end
 
     # =========================================================================================

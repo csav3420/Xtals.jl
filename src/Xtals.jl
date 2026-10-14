@@ -22,6 +22,7 @@ include("matter.jl")
 include("box.jl")
 include("crystal.jl")
 include("chemfiles_io.jl")
+include("pdb.jl")
 include("distance.jl")
 include("misc.jl")
 include("repfactors.jl")
@@ -134,7 +135,10 @@ export rc,
     calculate_bond_vectors!,
     clear_vectors!,
     bond_distance,
-    infer_bonds
+    infer_bonds,
+    # pdb.jl
+    write_pdb,
+    cif_to_pdb
 
 @precompile_signatures(Xtals)
 end # module Xtals

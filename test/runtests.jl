@@ -10,6 +10,7 @@ testfiles = [
     "slab.jl",
     "adsorbate.jl",
     "chemfiles_io.jl",
+    "pdb.jl",
     "aqua.jl",
     "benchmarks.jl",
 ]

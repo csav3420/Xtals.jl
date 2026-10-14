@@ -282,3 +282,48 @@ timestamp	julia_version	threads	operation	time_ms	memory_mb
 2026-08-13 09:52:38	1.12.6	1	tasker_type (1, 0, 0)	28.31	13.9
 2026-08-13 09:52:38	1.12.6	1	make_adsorbate_slab (n_molecules=4)	18.56	1.79
 2026-08-13 09:52:38	1.12.6	1	evaluate_interaction_energy (UFF)	0.03	0.0
+2026-08-13 10:58:11	1.12.6	1	surface_basis (2, 1, 2)	5.15	4.93
+2026-08-13 10:58:11	1.12.6	1	detect_molecules (Aspirin)	17.19	1.28
+2026-08-13 10:58:11	1.12.6	1	get_terminations (0,1,0; unique)	30.69	14.0
+2026-08-13 10:58:11	1.12.6	1	make_slab (1,1,0; 1 layer)	60.54	27.74
+2026-08-13 10:58:11	1.12.6	1	make_slab (2,1,2; min_size 50x50 Å)	45.77	12.93
+2026-08-13 10:58:11	1.12.6	1	layer_dipoles (1, 0, 0)	30.61	13.9
+2026-08-13 10:58:11	1.12.6	1	tasker_type (1, 0, 0)	31.83	13.9
+2026-08-13 10:58:11	1.12.6	1	make_adsorbate_slab (n_molecules=4)	19.81	1.8
+2026-08-13 10:58:11	1.12.6	1	evaluate_interaction_energy (UFF)	0.03	0.0
+2026-08-13 11:12:24	1.12.6	1	surface_basis (2, 1, 2)	5.04	4.93
+2026-08-13 11:12:24	1.12.6	1	detect_molecules (Aspirin)	14.44	1.28
+2026-08-13 11:12:24	1.12.6	1	get_terminations (0,1,0; unique)	27.8	14.0
+2026-08-13 11:12:24	1.12.6	1	make_slab (1,1,0; 1 layer)	55.05	27.74
+2026-08-13 11:12:24	1.12.6	1	make_slab (2,1,2; min_size 50x50 Å)	41.27	12.93
+2026-08-13 11:12:24	1.12.6	1	layer_dipoles (1, 0, 0)	28.43	13.9
+2026-08-13 11:12:24	1.12.6	1	tasker_type (1, 0, 0)	27.35	13.9
+2026-08-13 11:12:24	1.12.6	1	make_adsorbate_slab (n_molecules=4)	17.54	1.8
+2026-08-13 11:12:24	1.12.6	1	evaluate_interaction_energy (UFF)	0.03	0.0
+2026-08-13 16:33:07	1.12.6	1	surface_basis (2, 1, 2)	4.95	4.93
+2026-08-13 16:33:07	1.12.6	1	detect_molecules (Aspirin)	14.54	1.28
+2026-08-13 16:33:07	1.12.6	1	get_terminations (0,1,0; unique)	27.59	14.0
+2026-08-13 16:33:07	1.12.6	1	make_slab (1,1,0; 1 layer)	55.74	27.74
+2026-08-13 16:33:07	1.12.6	1	make_slab (2,1,2; min_size 50x50 Å)	40.2	12.93
+2026-08-13 16:33:07	1.12.6	1	layer_dipoles (1, 0, 0)	27.86	13.9
+2026-08-13 16:33:07	1.12.6	1	tasker_type (1, 0, 0)	27.59	13.9
+2026-08-13 16:33:07	1.12.6	1	make_adsorbate_slab (n_molecules=4)	17.19	1.8
+2026-08-13 16:33:07	1.12.6	1	evaluate_interaction_energy (UFF)	0.03	0.0
+2026-10-14 10:32:30	1.12.7	4	surface_basis (2, 1, 2)	5.28	4.93
+2026-10-14 10:32:30	1.12.7	4	detect_molecules (Aspirin)	14.84	1.28
+2026-10-14 10:32:30	1.12.7	4	get_terminations (0,1,0; unique)	28.01	14.0
+2026-10-14 10:32:30	1.12.7	4	make_slab (1,1,0; 1 layer)	52.75	27.74
+2026-10-14 10:32:30	1.12.7	4	make_slab (2,1,2; min_size 50x50 Å)	42.01	12.94
+2026-10-14 10:32:30	1.12.7	4	layer_dipoles (1, 0, 0)	30.17	13.9
+2026-10-14 10:32:30	1.12.7	4	tasker_type (1, 0, 0)	29.64	13.9
+2026-10-14 10:32:30	1.12.7	4	make_adsorbate_slab (n_molecules=4)	16.49	1.81
+2026-10-14 10:32:30	1.12.7	4	evaluate_interaction_energy (UFF)	0.03	0.0
+2026-10-14 14:33:01	1.12.7	1	surface_basis (2, 1, 2)	5.02	4.93
+2026-10-14 14:33:01	1.12.7	1	detect_molecules (Aspirin)	16.64	1.28
+2026-10-14 14:33:01	1.12.7	1	get_terminations (0,1,0; unique)	30.68	14.0
+2026-10-14 14:33:01	1.12.7	1	make_slab (1,1,0; 1 layer)	59.79	27.74
+2026-10-14 14:33:01	1.12.7	1	make_slab (2,1,2; min_size 50x50 Å)	44.82	12.93
+2026-10-14 14:33:01	1.12.7	1	layer_dipoles (1, 0, 0)	29.27	13.9
+2026-10-14 14:33:01	1.12.7	1	tasker_type (1, 0, 0)	29.42	13.9
+2026-10-14 14:33:01	1.12.7	1	make_adsorbate_slab (n_molecules=4)	20.65	1.8
+2026-10-14 14:33:01	1.12.7	1	evaluate_interaction_energy (UFF)	0.02	0.0

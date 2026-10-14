@@ -1,6 +1,66 @@
 using Chemfiles
 using Graphs
 using LinearAlgebra
+using PeriodicTable
+
+# =========================================================================================
+# 0. ELEMENT SYMBOL PARSER (PeriodicTable.jl Integration)
+# =========================================================================================
+
+"""
+    parse_element_symbol(sym::Union{Symbol, AbstractString}, atomic_number::Int=0, fallback_name::AbstractString="") -> Symbol
+
+Parse and sanitize raw atom names or force-field type strings (e.g. "OH", "OW", "HW1", "C12") into clean periodic table
+element symbols (:O, :H, :C, :Fe) using PeriodicTable.jl so force field parameters and CIF/XYZ exporters recognize elements cleanly.
+"""
+function parse_element_symbol(
+    sym::Union{Symbol, AbstractString},
+    atomic_number::Int=0,
+    fallback_name::AbstractString="",
+)
+    # 1. Primary: Use atomic_number Z from Chemfiles if valid (1 <= Z <= 118)
+    if 1 <= atomic_number <= 118
+        return Symbol(PeriodicTable.elements[atomic_number].symbol)
+    end
+
+    s = string(sym)
+    if isempty(s) || s == "X"
+        s = string(fallback_name)
+    end
+
+    # Remove digits, underscores, dashes, and pluses (e.g. "HW1" -> "HW", "C12" -> "C", "OH" -> "OH")
+    clean_s = replace(s, r"[0-9_\-\+]" => "")
+    if isempty(clean_s)
+        return :X
+    end
+
+    # Fast single-character check for Hydrogen
+    # In PDB/MOL2/CIF, "HO", "HO1", "HW1", "H1" start with H.
+    # Only exact "Ho" (lowercase o) is Holmium (element 67) or "Hf" is Hafnium (element 72).
+    if clean_s[1] == 'H' || clean_s[1] == 'h'
+        if length(clean_s) >= 2 && (clean_s[1:2] == "Ho" || clean_s[1:2] == "Hf")
+            return Symbol(clean_s[1:2])
+        else
+            return :H
+        end
+    end
+
+    # Check 2-character element prefix (e.g. :Fe, :Cu, :Si, :Cl, :Br)
+    if length(clean_s) >= 2
+        prefix2 = Symbol(uppercasefirst(lowercase(clean_s[1:2])))
+        if haskey(PeriodicTable.elements, prefix2)
+            return prefix2
+        end
+    end
+
+    # Check 1-character element prefix (e.g. :H, :O, :C, :N, :S, :P, :F)
+    prefix1 = Symbol(uppercasefirst(lowercase(clean_s[1:1])))
+    if haskey(PeriodicTable.elements, prefix1)
+        return prefix1
+    end
+
+    return prefix1
+end
 
 # =========================================================================================
 # 1. CHEMFILES BRIDGE & UNIVERSAL CRYSTAL READER
@@ -32,11 +92,12 @@ function read_crystal_chemfiles(
 
     for i in 1:n_atoms
         atom_i = Chemfiles.Atom(chem_topo, UInt64(i - 1))
-        elem_str = Chemfiles.type(atom_i)
-        if isempty(elem_str) || elem_str == "X"
-            elem_str = Chemfiles.name(atom_i)
-        end
-        push!(species_vec, Symbol(elem_str))
+        elem_type = Chemfiles.type(atom_i)
+        elem_name = Chemfiles.name(atom_i)
+        atomic_num = Int(Chemfiles.atomic_number(atom_i))
+
+        clean_species = parse_element_symbol(elem_type, atomic_num, elem_name)
+        push!(species_vec, clean_species)
 
         coords_cart[1, i] = chem_pos[1, i]
         coords_cart[2, i] = chem_pos[2, i]
@@ -92,16 +153,19 @@ function read_crystal_chemfiles(
 end
 
 # =========================================================================================
-# 2. UNIVERSAL FILE EXPORTER (write_crystal)
+# 2. UNIVERSAL FILE EXPORTER (write_crystal & write_crystal_chemfiles)
 # =========================================================================================
 
 """
-    write_crystal(crystal::Crystal, filename::AbstractString)
+    write_crystal_chemfiles(crystal::Crystal, filename::AbstractString)
 
-Export any `Crystal` structure to file formats supported by Chemfiles (.xyz, .pdb, .mol2, .sdf, .gro, .cif).
+Export an Xtals `Crystal` object to non-CIF file formats supported by Chemfiles (.xyz, .pdb, .mol2, .sdf, .gro).
+Wraps fractional coordinates into [0, 1)^3 so atoms sit cleanly inside the cell box.
 """
-function write_crystal(crystal::Crystal, filename::AbstractString)
-    c_cart = Cart(crystal.atoms.coords, crystal.box).x
+function write_crystal_chemfiles(crystal::Crystal, filename::AbstractString)
+    # Wrap fractional coordinates to [0, 1)^3 so atoms and molecules sit cleanly inside the cell box
+    xf_wrapped = mod.(crystal.atoms.coords.xf, 1.0)
+    c_cart = crystal.box.f_to_c * xf_wrapped
     n_atoms = crystal.atoms.n
 
     frame = Chemfiles.Frame()
@@ -114,9 +178,8 @@ function write_crystal(crystal::Crystal, filename::AbstractString)
         Chemfiles.add_atom!(frame, atom_i, [c_cart[1, i], c_cart[2, i], c_cart[3, i]])
     end
 
-    # Set unit cell matrix
-    box_mat = crystal.box.f_to_c
-    chem_box = Chemfiles.UnitCell(box_mat)
+    # Set unit cell
+    chem_box = Chemfiles.UnitCell(crystal.box.f_to_c)
     Chemfiles.set_cell!(frame, chem_box)
 
     # Export bonds if present
@@ -133,6 +196,24 @@ function write_crystal(crystal::Crystal, filename::AbstractString)
     close(traj)
 
     return nothing
+end
+
+"""
+    write_crystal(crystal::Crystal, filename::AbstractString; kwargs...)
+
+Universal file exporter dispatch:
+- Dispatches `.cif` files directly to `write_cif(crystal, filename; kwargs...)` for full crystallographic CIF export.
+- Dispatches `.pdb` files directly to native `write_pdb(crystal, filename; kwargs...)` (zero Chemfiles dependency).
+- Uses `write_crystal_chemfiles` for all other formats (.xyz, .mol2, .sdf, .gro).
+"""
+function write_crystal(crystal::Crystal, filename::AbstractString; kwargs...)
+    if endswith(lowercase(filename), ".cif")
+        write_cif(crystal, filename; kwargs...)
+    elseif endswith(lowercase(filename), ".pdb")
+        write_pdb(crystal, filename; kwargs...)
+    else
+        write_crystal_chemfiles(crystal, filename)
+    end
 end
 
 # =========================================================================================

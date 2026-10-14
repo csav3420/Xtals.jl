@@ -6,6 +6,8 @@
 # (UFF) Lennard-Jones (12-6) + Damped Coulomb electrostatic interaction energy evaluation.
 # =========================================================================================
 
+using Random
+
 # =========================================================================================
 # 1. UFF FORCE FIELD PARAMETER TABLE
 # =========================================================================================
@@ -421,6 +423,7 @@ end
                                         layer_height::Union{Nothing, Float64}=nothing,
                                         d_contact::Union{Nothing, Float64}=nothing,
                                         n_trials::Int=50,
+                                        seed::Union{Nothing, Int}=nothing,
                                         vacuum::Float64=10.0,
                                         orthogonalize_z::Bool=true) -> Crystal
 
@@ -434,6 +437,7 @@ Deposit single- or multi-layer adsorbates smoothly across the full surface cell 
 - `layer_height::Union{Nothing, Float64}`: Target adsorbate solvation film height in Ångströms (e.g. `10.0` Å).
 - `d_contact::Union{Nothing, Float64}`: Target physical contact distance in Ångströms.
 - `n_trials::Int`: Number of random parallel Monte Carlo trial candidates per molecule insertion.
+- `seed::Union{Nothing, Int}`: Optional integer seed for 100% reproducible random Monte Carlo sampling.
 - `vacuum::Float64`: Vacuum gap padding in Ångströms.
 """
 function make_adsorbate_slab(
@@ -443,6 +447,7 @@ function make_adsorbate_slab(
     layer_height::Union{Nothing, Float64}=nothing,
     d_contact::Union{Nothing, Float64}=nothing,
     n_trials::Int=50,
+    seed::Union{Nothing, Int}=nothing,
     vacuum::Float64=10.0,
     orthogonalize_z::Bool=true,
 )
@@ -458,6 +463,11 @@ function make_adsorbate_slab(
     end
     if n_molecules !== nothing && n_molecules < 1
         throw(ArgumentError("n_molecules must be >= 1, got $n_molecules"))
+    end
+
+    # Reproducible RNG seed initialization if specified
+    if seed !== nothing
+        Random.seed!(seed)
     end
 
     # Step 1: Prepare adsorbate template and initialize substrate cache
