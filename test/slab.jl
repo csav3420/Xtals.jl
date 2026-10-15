@@ -285,4 +285,55 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         @test_throws ArgumentError make_slab(xtal, (1, 0, 0); layers=0)
         @test_throws ArgumentError dipole_moment(no_chg_xtal) # Zero/unassigned charges exception
     end
+
+    @testset "Near-Square Surface Supercells" begin
+        xtal = Crystal("aspirin.cif")
+        geom = Xtals.precompute_slab_geometry(xtal, (1, 1, 0))
+
+        # 1. Test find_near_square_supercell helper
+        res = find_near_square_supercell(geom.u1_rot, geom.u2_rot)
+        @test res.det > 0
+        @test round(Int, det(res.N)) == res.det
+        @test abs(res.gamma_deg - 90.0) < 5.0
+        @test max(res.L1 / res.L2, res.L2 / res.L1) < 1.1
+
+        # 2. Test make_slab with near_square=true on Aspirin (1, 1, 0)
+        sq_slabs = make_slab(xtal, (1, 1, 0); near_square=true, layers=1)
+        @test length(sq_slabs) == 1
+        slab = sq_slabs[1]
+
+        @test slab.atoms.n == 84 * res.det # 504 atoms
+        @test isapprox(slab.box.α * 180.0 / π, 90.0, atol=1e-3)
+        @test isapprox(slab.box.β * 180.0 / π, 90.0, atol=1e-3)
+        @test abs(slab.box.γ * 180.0 / π - 90.0) < 5.0
+        @test abs(slab.box.a - slab.box.b) / slab.box.a < 0.05
+
+        # Check distances and absence of broken molecules
+        min_dist = check_slab_distances(slab)
+        @test min_dist > 1.5
+
+        # 3. Test near_square with min_size requested
+        sq_slabs_40 = make_slab(
+            xtal, (1, 1, 0); near_square=true, min_size=(40.0, 40.0), layers=1
+        )
+        slab_40 = sq_slabs_40[1]
+        @test slab_40.box.a >= 40.0
+        @test slab_40.box.b >= 40.0
+        @test abs(slab_40.box.γ * 180.0 / π - 90.0) < 3.0
+        @test check_slab_distances(slab_40) > 1.5
+
+        # 4. Test on Hexagonal / Cubic (1, 1, 1) surface (HKUST-1)
+        hkust = Crystal("HKUST-1_P1.cif")
+        geom_hkust = Xtals.precompute_slab_geometry(hkust, (1, 1, 1))
+        res_hkust = find_near_square_supercell(geom_hkust.u1_rot, geom_hkust.u2_rot)
+        @test abs(res_hkust.gamma_deg - 90.0) < 4.0
+        @test max(res_hkust.L1 / res_hkust.L2, res_hkust.L2 / res_hkust.L1) < 1.05
+
+        # 5. Multi-layer near-square slabs
+        multi_sq = make_slab(xtal, (1, 1, 0); near_square=true, layers=2)
+        @test length(multi_sq) == 2
+        @test multi_sq[1].atoms.n == 84 * res.det
+        @test multi_sq[2].atoms.n == 84 * res.det * 2
+        @test check_slab_distances(multi_sq[2]) > 1.5
+    end
 end

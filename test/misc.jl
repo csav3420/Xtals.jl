@@ -1,6 +1,6 @@
 module Misc_Test
 
-using Xtals, Test, DataFrames, Graphs, CSV
+using Xtals, Test, Graphs
 import IOCapture.capture
 
 @testset "Misc Tests" begin

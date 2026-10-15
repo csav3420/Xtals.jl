@@ -2,9 +2,7 @@ module Xtals
 
 using AtomsBase,
     Bio3DView,
-    CSV,
     Chemfiles,
-    DataFrames,
     Graphs,
     LinearAlgebra,
     MetaGraphs,
@@ -114,6 +112,7 @@ export rc,
     make_slab,
     make_slabs,
     surface_basis,
+    find_near_square_supercell,
     get_terminations,
     are_terminations_equivalent,
     check_slab_distances,
@@ -137,7 +136,9 @@ export rc,
     bond_distance,
     infer_bonds,
     # pdb.jl
-    write_pdb,
+    write_crystal_pdb,
+    write_water_pdb,
+    standardize_md_pdb,
     cif_to_pdb
 
 @precompile_signatures(Xtals)

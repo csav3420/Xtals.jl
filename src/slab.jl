@@ -436,6 +436,133 @@ function check_slab_distances(slab::Crystal; min_dist::Float64=0.7)
 end
 
 """
+    find_near_square_supercell(u1::Vector{Float64}, u2::Vector{Float64};
+                               min_size::Union{Nothing, Tuple{Float64, Float64}, Float64}=nothing,
+                               max_det::Int=24) -> NamedTuple
+
+Find a 2D integer transformation matrix N = [n11 n12; n21 n22] in Z^(2x2) with det(N) > 0
+that transforms primitive in-plane surface vectors [u1 u2] into a near-square supercell
+(gamma ≈ 90°, ||w1|| ≈ ||w2||) with zero artificial coordinate strain.
+
+# Arguments
+- `u1::Vector{Float64}`: First in-plane primitive surface basis vector (in surface Cartesian frame).
+- `u2::Vector{Float64}`: Second in-plane primitive surface basis vector.
+- `min_size`: Optional minimum target lateral dimension (Lx, Ly).
+- `max_det::Int`: Maximum supercell area multiplication factor (default: 24).
+
+# Returns
+- `NamedTuple`: (N, det, w1, w2, L1, L2, gamma_deg)
+"""
+function find_near_square_supercell(
+    u1::Vector{Float64},
+    u2::Vector{Float64};
+    min_size::Union{Nothing, Tuple{Float64, Float64}, Float64}=nothing,
+    max_det::Int=24,
+)
+    min_L = if min_size === nothing
+        5.0
+    elseif min_size isa Tuple{Float64, Float64}
+        max(min_size[1], min_size[2])
+    else
+        Float64(min_size)
+    end
+
+    area_prim = abs(u1[1] * u2[2] - u1[2] * u2[1])
+    if min_size !== nothing && area_prim > 1e-4
+        min_det_req = ceil(Int, (min_L * min_L) / area_prim)
+        max_det = max(max_det, min_det_req + 12)
+    end
+
+    best_score = Inf
+    u1_len = norm(u1)
+    u2_len = norm(u2)
+    best_result = (
+        N=[1 0; 0 1],
+        det=1,
+        w1=u1,
+        w2=u2,
+        L1=u1_len,
+        L2=u2_len,
+        gamma_deg=acos(clamp(dot(u1, u2) / (u1_len * u2_len), -1.0, 1.0)) * 180.0 / π,
+    )
+
+    max_idx = max(8, ceil(Int, sqrt(max_det) * 2))
+
+    for n11 in (-max_idx):max_idx, n21 in (-max_idx):max_idx
+        w1 = n11 * u1 + n21 * u2
+        L1 = norm(w1)
+        if L1 < min_L
+            continue
+        end
+
+        for n12 in (-max_idx):max_idx, n22 in (-max_idx):max_idx
+            det2d = n11 * n22 - n12 * n21
+            if det2d <= 0 || det2d > max_det
+                continue
+            end
+
+            w2 = n12 * u1 + n22 * u2
+            L2 = norm(w2)
+            if L2 < min_L
+                continue
+            end
+
+            cos_ang = dot(w1, w2) / (L1 * L2)
+            ang_deg = acos(clamp(cos_ang, -1.0, 1.0)) * 180.0 / π
+            ang_dev = abs(ang_deg - 90.0)
+            len_ratio = max(L1 / L2, L2 / L1)
+
+            # Optimization score: prioritize perpendicular angle, square aspect ratio, and compact area
+            score = ang_dev + 35.0 * (len_ratio - 1.0) + 0.15 * det2d
+
+            if score < best_score
+                best_score = score
+                best_result = (
+                    N=[n11 n12; n21 n22],
+                    det=det2d,
+                    w1=w1,
+                    w2=w2,
+                    L1=L1,
+                    L2=L2,
+                    gamma_deg=ang_deg,
+                )
+            end
+        end
+    end
+
+    return best_result
+end
+
+"""
+    enumerate_supercell_grid_points(N::Matrix{Int}) -> Vector{Tuple{Int, Int}}
+
+Enumerate all exact integer lattice translation points (r1, r2) in Z^2 that map inside
+the 2D supercell spanned by integer matrix N (where inv(N) * [r1, r2] in [0, 1)^2).
+Guarantees exactly det(N) non-overlapping grid points.
+"""
+function enumerate_supercell_grid_points(N::Matrix{Int})
+    detN = round(Int, det(N))
+    invN = inv(N)
+
+    r1_min = min(0, N[1, 1], N[1, 2], N[1, 1] + N[1, 2]) - 2
+    r1_max = max(0, N[1, 1], N[1, 2], N[1, 1] + N[1, 2]) + 2
+    r2_min = min(0, N[2, 1], N[2, 2], N[2, 1] + N[2, 2]) - 2
+    r2_max = max(0, N[2, 1], N[2, 2], N[2, 1] + N[2, 2]) + 2
+
+    grid_points = Tuple{Int, Int}[]
+    sizehint!(grid_points, detN)
+
+    for r1 in r1_min:r1_max, r2 in r2_min:r2_max
+        s = invN * [r1, r2]
+        if s[1] >= -1e-6 && s[1] < 1.0 - 1e-6 && s[2] >= -1e-6 && s[2] < 1.0 - 1e-6
+            push!(grid_points, (r1, r2))
+        end
+    end
+
+    return grid_points
+end
+
+"""
     precompute_slab_geometry(crystal::Crystal, hkl::Tuple{Int, Int, Int}) -> NamedTuple
 
 Precomputes primitive surface basis matrix `M`, lattice rotation matrix `R`,
@@ -472,6 +599,8 @@ function construct_single_slab(
     k_layer::Int;
     Nx::Int=1,
     Ny::Int=1,
+    supercell_N::Union{Nothing, Matrix{Int}}=nothing,
+    grid_points::Union{Nothing, Vector{Tuple{Int, Int}}}=nothing,
     vacuum::Float64=10.0,
     termination::Union{Int, Tuple{Int, Int}}=1,
     termination_bottom::Union{Nothing, Int}=nothing,
@@ -515,7 +644,11 @@ function construct_single_slab(
     total_cell_z = total_slab_z + 2.0 * vacuum
 
     # Step 2: Construct supercell lattice vectors under requested orthogonalization mode
-    if orthogonalize
+    if supercell_N !== nothing
+        u1_slab = supercell_N[1, 1] * geom.u1_rot + supercell_N[2, 1] * geom.u2_rot
+        u2_slab = supercell_N[1, 2] * geom.u1_rot + supercell_N[2, 2] * geom.u2_rot
+        u3_slab = [0.0, 0.0, total_cell_z]
+    elseif orthogonalize
         u1_slab = [norm(geom.u1_rot) * Nx, 0.0, 0.0]
         u2_slab = [0.0, norm(geom.u2_rot) * Ny, 0.0]
         u3_slab = [0.0, 0.0, total_cell_z]
@@ -532,6 +665,14 @@ function construct_single_slab(
     f_to_c_slab = [u1_slab u2_slab u3_slab]
     slab_box = Box(f_to_c_slab)
 
+    # Resolve in-plane grid points
+    grid_pts = if grid_points !== nothing
+        grid_points
+    else
+        [(rx, ry) for rx in 0:(Nx - 1) for ry in 0:(Ny - 1)]
+    end
+    n_in_plane = length(grid_pts)
+
     # Memory pre-allocation (sizehint!)
     slab_species = Symbol[]
     slab_coords_cart = Vector{Float64}[]
@@ -539,7 +680,7 @@ function construct_single_slab(
     slab_edges = Tuple{Int, Int}[]
 
     if keep_molecules_whole && !isempty(geom.molecules)
-        total_atoms_est = sum(length(m.species) for m in geom.molecules) * Nx * Ny * Nz
+        total_atoms_est = sum(length(m.species) for m in geom.molecules) * n_in_plane * Nz
         sizehint!(slab_species, total_atoms_est)
         sizehint!(slab_coords_cart, total_atoms_est)
         sizehint!(slab_charges, total_atoms_est)
@@ -554,7 +695,7 @@ function construct_single_slab(
             z_mod = c_base[3] - shift_bot
 
             max_kz = delta_shift > 1e-5 ? Nz : (Nz - 1)
-            for rx in 0:(Nx - 1), ry in 0:(Ny - 1), kz in 0:max_kz
+            for (rx, ry) in grid_pts, kz in 0:max_kz
                 if kz == Nz && z_mod > delta_shift + 1e-5
                     continue
                 end
@@ -578,7 +719,7 @@ function construct_single_slab(
             end
         end
     else
-        total_atoms_est = crystal.atoms.n * Nx * Ny * Nz
+        total_atoms_est = crystal.atoms.n * n_in_plane * Nz
         sizehint!(slab_species, total_atoms_est)
         sizehint!(slab_coords_cart, total_atoms_est)
         if has_charges(crystal)
@@ -590,7 +731,7 @@ function construct_single_slab(
         r_rot_base = [geom.R * coords_cart_orig[:, i] for i in 1:crystal.atoms.n]
 
         max_rz = delta_shift > 1e-5 ? Nz : (Nz - 1)
-        for rx in 0:(Nx - 1), ry in 0:(Ny - 1), rz in 0:max_rz
+        for (rx, ry) in grid_pts, rz in 0:max_rz
             grid_shift = rx * geom.u1_rot + ry * geom.u2_rot
             for i in 1:crystal.atoms.n
                 r_rot = r_rot_base[i]
@@ -678,6 +819,8 @@ all generated intermediate layer slabs (from 1 layer up to N_max layers).
 - `orthogonalize_z::Bool`: Force alpha = 90 deg and beta = 90 deg cell angles (default: `true`).
 - `orthogonalize::Bool`: Force alpha = 90 deg, beta = 90 deg, and gamma = 90 deg cell angles.
 - `keep_molecules_whole::Bool`: Preserve intact molecules across surface cuts (default: `true`).
+- `near_square::Bool`: Construct a pure-integer near-square surface supercell (gamma ≈ 90°, ||w1|| ≈ ||w2||) with zero artificial strain (default: `false`).
+- `max_supercell_det::Int`: Maximum supercell area multiplication factor for near-square search (default: `24`).
 """
 function make_slab(
     crystal::Crystal,
@@ -696,6 +839,8 @@ function make_slab(
     orthogonalize_z::Bool=true,
     orthogonalize::Bool=false,
     keep_molecules_whole::Bool=true,
+    near_square::Bool=false,
+    max_supercell_det::Int=24,
 )
     # Step 1: Input validation guard clauses for vacuum, dimensions, and layer counts
     if vacuum < 0.0
@@ -731,14 +876,26 @@ function make_slab(
     end
     term_shift_tuple = (term_shift_bot, term_shift_top)
 
-    # Step 2: Calculate minimum lateral surface replication factors (Nx, Ny)
+    # Step 2: Calculate lateral surface supercell
     L1 = norm(geom.u1_rot)
     L2 = norm(geom.u2_rot)
 
+    supercell_N = nothing
+    grid_points = nothing
     Nx, Ny = surface_dim
-    if min_size !== nothing
-        Nx = max(1, ceil(Int, min_size[1] / L1))
-        Ny = max(1, ceil(Int, min_size[2] / L2))
+
+    if near_square
+        near_sq = find_near_square_supercell(
+            geom.u1_rot, geom.u2_rot; min_size=min_size, max_det=max_supercell_det
+        )
+        supercell_N = near_sq.N
+        grid_points = enumerate_supercell_grid_points(supercell_N)
+    else
+        if min_size !== nothing
+            Nx = max(1, ceil(Int, min_size[1] / L1))
+            Ny = max(1, ceil(Int, min_size[2] / L2))
+        end
+        grid_points = [(rx, ry) for rx in 0:(Nx - 1) for ry in 0:(Ny - 1)]
     end
 
     # Step 3: Determine maximum layer count N_max
@@ -766,6 +923,8 @@ function make_slab(
             k;
             Nx=Nx,
             Ny=Ny,
+            supercell_N=supercell_N,
+            grid_points=grid_points,
             vacuum=vacuum,
             termination=termination,
             termination_bottom=termination_bottom,

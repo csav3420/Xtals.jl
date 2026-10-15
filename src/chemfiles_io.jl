@@ -203,14 +203,14 @@ end
 
 Universal file exporter dispatch:
 - Dispatches `.cif` files directly to `write_cif(crystal, filename; kwargs...)` for full crystallographic CIF export.
-- Dispatches `.pdb` files directly to native `write_pdb(crystal, filename; kwargs...)` (zero Chemfiles dependency).
+- Dispatches `.pdb` files directly to native `write_crystal_pdb(crystal, filename; kwargs...)` (zero Chemfiles dependency).
 - Uses `write_crystal_chemfiles` for all other formats (.xyz, .mol2, .sdf, .gro).
 """
 function write_crystal(crystal::Crystal, filename::AbstractString; kwargs...)
     if endswith(lowercase(filename), ".cif")
         write_cif(crystal, filename; kwargs...)
     elseif endswith(lowercase(filename), ".pdb")
-        write_pdb(crystal, filename; kwargs...)
+        write_crystal_pdb(crystal, filename; kwargs...)
     else
         write_crystal_chemfiles(crystal, filename)
     end
