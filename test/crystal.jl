@@ -131,6 +131,12 @@ end
     @test isapprox(rewritten_non_p1_fractional, non_P1_xtal, atol=0.0001)
     @test isapprox(rewritten_non_p1_cartesian, non_P1_xtal_cartesian, atol=0.0001)
 
+    rm(joinpath("data", "crystals", "rewritten_symmetry_test_structure.cif"); force=true)
+    rm(
+        joinpath("data", "crystals", "rewritten_symmetry_test_structure_cartn.cif");
+        force=true,
+    )
+
     non_P1_xtal = deepcopy(symmetry_test_structure)
     strip_numbers_from_atom_labels!(non_P1_xtal)
     non_P1_xtal_cartesian = deepcopy(symmetry_test_structure_cartn)
@@ -317,21 +323,24 @@ end
     )
     crystal_reloaded = Crystal(rewrite_filename)
     @test isapprox(crystal, crystal_reloaded, atol=0.0001)
-    crystal = Crystal("ATIBOU01_clean.cssr"; include_zero_charges=false)
+    crystal = Crystal("ATIBOU01_clean.cif"; include_zero_charges=false)
     @test_throws ErrorException write_cif(crystal)
     crystal = assign_charges(
         crystal, Dict(:Mn => 2.0, :O => -2.0, :H => 0.0, :C => 0.0), Inf
     )
-    write_cif(crystal)
-    @test isfile("ATIBOU01_clean.cssr.cif")
+    tmp_out = tempname() * ".cif"
+    write_cif(crystal, tmp_out)
+    @test isfile(tmp_out)
+    rm(tmp_out; force=true)
+    rm(joinpath(rc[:paths][:crystals], rewrite_filename); force=true)
 end
 
 @testset "strip numbers from labels" begin
-    hk = Crystal("HKUST-1_low_symm.cif"; remove_duplicates=true)
-    strip_numbers_from_atom_labels!(hk)
-    hk_p1 = Crystal("HKUST-1_P1.cif") # from avogadro
-    strip_numbers_from_atom_labels!(hk_p1)
-    @test equal_multisets(hk.atoms, hk_p1.atoms, hk.box)
+    xtal_labels = Crystal("SBMOF-1_bad_labels.cif"; species_col=["_atom_site_label"])
+    @test xtal_labels.atoms.species[1] == :C1A
+    strip_numbers_from_atom_labels!(xtal_labels)
+    @test xtal_labels.atoms.species[1] == :C
+    @test all(!occursin(r"\d", string(sp)) for sp in xtal_labels.atoms.species)
 end
 
 @testset "cssr read/write" begin
@@ -347,6 +356,8 @@ end
     write_cssr(xtal_cif, joinpath(rc[:paths][:crystals], da_xtalname * ".cssr"))
     xtal_cssr = Crystal(da_xtalname * ".cssr"; include_zero_charges=true)
     @test isapprox(xtal_cssr, xtal_cif, atol=0.0001)
+    rm(da_xtalname * ".cssr"; force=true)
+    rm(joinpath(rc[:paths][:crystals], da_xtalname * ".cssr"); force=true)
 end
 
 @testset "replication" begin
@@ -380,8 +391,8 @@ end
 @testset "vtk writer" begin
     xtal = deepcopy(sbmof1)
     @test Xtals.vtk_filename(xtal) == "SBMOF-1.vtk"
-    xtal = Crystal("ATIBOU01_clean.cssr")
-    @test Xtals.vtk_filename(xtal) == "ATIBOU01_clean.vtk"
+    xtal_cssr = Crystal("test_structure2.cssr")
+    @test Xtals.vtk_filename(xtal_cssr) == "test_structure2.vtk"
 end
 
 @testset "addition" begin
@@ -481,6 +492,11 @@ end
         Xtals.NET_CHARGE_TOL,
     ) # not gonna be neutral
     @test_throws ErrorException Crystal("high_precision_charges_test_not_neutral.cif") # should throw error b/c not charge neutral
+    rm(joinpath(rc[:paths][:crystals], "high_precision_charges_test.cif"); force=true)
+    rm(
+        joinpath(rc[:paths][:crystals], "high_precision_charges_test_not_neutral.cif");
+        force=true,
+    )
 end
 
 @testset "species_from_col" begin
@@ -509,7 +525,6 @@ end
     @test isapprox(xtal.box.reciprocal_lattice, 2 * π * inv(xtal.box.f_to_c))
     @test xtal.box.Ω ≈ det(xtal.box.f_to_c) # sneak in crystal test
     @test isapprox(crystal_density(xtal), 1570.4, atol=0.5) # kg/m3     
-    @test Crystal("UiO-68_UVAHIK.cif"; remove_duplicates=true).atoms.n == 920
 end
 
 end

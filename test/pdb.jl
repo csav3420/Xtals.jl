@@ -30,14 +30,11 @@ using Xtals, Test, LinearAlgebra, Graphs, MetaGraphs
     # Test HETATM lines are exactly 80 chars and properly aligned
     hetatm_lines = filter(startswith.("HETATM"), lines1)
     @test length(hetatm_lines) == 84 # 84 atoms in aspirin supercell
-    for line in hetatm_lines
-        @test length(line) == 80
-        @test line[1:6] == "HETATM"
-        @test strip(line[18:20]) == "MOL"
-        @test line[22] == 'A'
-        elem = strip(line[77:78])
-        @test elem in ["C", "H", "O"]
-    end
+    @test all(length.(hetatm_lines) .== 80)
+    @test all(l -> l[1:6] == "HETATM", hetatm_lines)
+    @test all(l -> strip(l[18:20]) == "MOL", hetatm_lines)
+    @test all(l -> l[22] == 'A', hetatm_lines)
+    @test all(l -> strip(l[77:78]) in ["C", "H", "O"], hetatm_lines)
 
     # 2. Bond inference and CONECT records
     out2 = cif_to_pdb(cif_file, temp_pdb2; infer_bonds=true, drop_cross_pb_bonds=true)
@@ -47,7 +44,6 @@ using Xtals, Test, LinearAlgebra, Graphs, MetaGraphs
     @test length(conect_lines) > 0
 
     # Verify no cross-boundary bonds exist in CONECT records
-    # Read coordinates from HETATM lines
     hetatm_coords = zeros(Float64, 3, 84)
     for (idx, line) in enumerate(filter(startswith.("HETATM"), lines2))
         x = parse(Float64, line[31:38])
@@ -56,15 +52,16 @@ using Xtals, Test, LinearAlgebra, Graphs, MetaGraphs
         hetatm_coords[:, idx] = [x, y, z]
     end
 
+    conect_dists = Float64[]
     for cline in conect_lines
         parts = split(cline)
         src_idx = parse(Int, parts[2])
         for tok in parts[3:end]
             dst_idx = parse(Int, tok)
-            dist = norm(hetatm_coords[:, src_idx] - hetatm_coords[:, dst_idx])
-            @test dist < 3.2 # all bonds intact within the cell, no ripped cross-boundary bonds
+            push!(conect_dists, norm(hetatm_coords[:, src_idx] - hetatm_coords[:, dst_idx]))
         end
     end
+    @test all(conect_dists .< 3.2) # all bonds intact within the cell, no ripped cross-boundary bonds
 
     # 3. Crystal object input to write_crystal_pdb & cif_to_pdb
     xtal = Crystal("aspirin.cif")
@@ -95,10 +92,7 @@ using Xtals, Test, LinearAlgebra, Graphs, MetaGraphs
     ni_lines = filter(l -> startswith(l, "HETATM") && strip(l[77:78]) == "NI", nipy_lines)
     @test length(ni_lines) > 0
     # For Ni (2-character element), atom name starts in col 13
-    for nl in ni_lines
-        @test nl[13:14] == "Ni"
-        @test strip(nl[77:78]) == "NI"
-    end
+    @test all(nl[13:14] == "Ni" && strip(nl[77:78]) == "NI" for nl in ni_lines)
 
     # 6. write_water_pdb canonical water generation
     temp_wat = tempname() * ".pdb"
@@ -151,14 +145,12 @@ using Xtals, Test, LinearAlgebra, Graphs, MetaGraphs
     @test startswith(asp_lines[1], "CRYST1")
     asp_het = filter(startswith.("HETATM"), asp_lines)
     @test length(asp_het) == 84 # 4 molecules of 21 atoms
+    @test all(length.(asp_het) .== 80)
+    @test all(strip(l[18:20]) == "ASP" for l in asp_het)
     # Verify sequential residue numbering: 1, 2, 3, 4
     for m in 1:4
         m_block = asp_het[(((m - 1) * 21) + 1):(m * 21)]
-        for l in m_block
-            @test parse(Int, l[23:26]) == m
-            @test strip(l[18:20]) == "ASP"
-            @test length(l) == 80
-        end
+        @test all(parse(Int, l[23:26]) == m for l in m_block)
         # Verify atom names in each residue are C1..C9, O1..O4, H1..H8 (unique)
         names = [strip(l[13:16]) for l in m_block]
         @test length(unique(names)) == 21

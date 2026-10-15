@@ -48,29 +48,42 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
     current_ts = Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")
     num_threads = Threads.nthreads()
 
-    if !isfile(tsv_file)
-        open(tsv_file, "w") do io
-            println(io, "timestamp\tjulia_version\tthreads\toperation\ttime_ms\tmemory_mb")
+    full_benchmark = get(ENV, "XTALS_BENCHMARK", "false") == "true"
+
+    if full_benchmark
+        if !isfile(tsv_file)
+            open(tsv_file, "w") do io
+                println(
+                    io, "timestamp\tjulia_version\tthreads\toperation\ttime_ms\tmemory_mb"
+                )
+            end
         end
+
+        println(
+            "\n==========================================================================================",
+        )
+        println(
+            "             XTALS BENCHMARKTOOLS STATISTICAL TIMELINE TRACKER (Threads: $(num_threads))        ",
+        )
+        println(
+            "==========================================================================================",
+        )
+        println(
+            "Operation                               | Med Time(ms) | Memory (MB) | Timeline vs Prev Run",
+        )
+        println(
+            "------------------------------------------------------------------------------------------",
+        )
     end
 
-    println(
-        "\n==========================================================================================",
-    )
-    println(
-        "             XTALS BENCHMARKTOOLS STATISTICAL TIMELINE TRACKER (Threads: $(num_threads))        ",
-    )
-    println(
-        "==========================================================================================",
-    )
-    println(
-        "Operation                               | Med Time(ms) | Memory (MB) | Timeline vs Prev Run",
-    )
-    println(
-        "------------------------------------------------------------------------------------------",
-    )
-
     function run_and_log_bt(op_name::String, b)
+        if !full_benchmark
+            # Fast verification pass for unit testing (single evaluation, zero tuning overhead)
+            res = BenchmarkTools.run(b; samples=1, evals=1)
+            @test BenchmarkTools.time(median(res)) >= 0.0
+            return nothing
+        end
+
         tune!(b)
         res = run(b; samples=50, evals=1)
 
@@ -152,8 +165,10 @@ set_paths(joinpath(dirname(pathof(Xtals)), "..", "test", "data"))
         )
     )
 
-    println(
-        "==========================================================================================",
-    )
-    println("Benchmark timeline metrics logged to: $tsv_file\n")
+    if full_benchmark
+        println(
+            "==========================================================================================",
+        )
+        println("Benchmark timeline metrics logged to: $tsv_file\n")
+    end
 end

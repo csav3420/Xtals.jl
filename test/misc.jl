@@ -48,6 +48,12 @@ import IOCapture.capture
     @test isfile("SBMOF-1.xyz")
     write_xyz(xtal, "foo.xyz")
     @test isfile("foo.xyz")
+
+    # Cleanup temporary files
+    rm(mol2_temp; force=true)
+    rm("SBMOF-1.mol2"; force=true)
+    rm("SBMOF-1.xyz"; force=true)
+    rm("foo.xyz"; force=true)
 end
 
 end

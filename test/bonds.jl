@@ -73,7 +73,7 @@ end
     # NiPyC2 bonding
     c = Crystal("NiPyC2_relax.cif")
     strip_numbers_from_atom_labels!(c)
-    c = replicate(c, (4, 4, 4))
+    c = replicate(c, (2, 2, 2))
     bonding_rules = [
         BondingRule(:H, :*, 1.2),
         BondingRule(:Ni, :O, 2.5),

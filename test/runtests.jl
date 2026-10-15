@@ -12,8 +12,11 @@ testfiles = [
     "chemfiles_io.jl",
     "pdb.jl",
     "aqua.jl",
-    "benchmarks.jl",
 ]
+
+if get(ENV, "XTALS_BENCHMARK", "false") == "true"
+    push!(testfiles, "benchmarks.jl")
+end
 
 @assert (VERSION.major == 1) && (VERSION.minor ≥ 6) "Minimum Julia version not met."
 
